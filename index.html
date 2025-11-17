@@ -17,15 +17,15 @@
         const { useState, useEffect } = React;
 
         // 🔥 REPLACE WITH YOUR FIREBASE CONFIG
-       const firebaseConfig = {
-  apiKey: "AIzaSyCIi6V8Q7zlKLd7BmjyylD87fLBaKkO65U",
-  authDomain: "tuitiontracker-ac584.firebaseapp.com",
-  projectId: "tuitiontracker-ac584",
-  storageBucket: "tuitiontracker-ac584.firebasestorage.app",
-  messagingSenderId: "121462363628",
-  appId: "1:121462363628:web:7c9a1e8574dc2d74381cc9",
-databaseURL: "https://tuitiontracker-ac584-default-rtdb.asia-southeast1.firebasedatabase.app/"
-};
+        const firebaseConfig = {
+            apiKey: "AIzaSyCIi6V8Q7zlKLd7BmjyylD87fLBaKkO65U",
+            authDomain: "tuitiontracker-ac584.firebaseapp.com",
+            projectId: "tuitiontracker-ac584",
+            storageBucket: "tuitiontracker-ac584.firebasestorage.app",
+            messagingSenderId: "121462363628",
+            appId: "1:121462363628:web:7c9a1e8574dc2d74381cc9",
+            databaseURL: "https://tuitiontracker-ac584-default-rtdb.asia-southeast1.firebasedatabase.app/"
+        };
 
         let database;
         try {
@@ -36,9 +36,6 @@ databaseURL: "https://tuitiontracker-ac584-default-rtdb.asia-southeast1.firebase
         }
 
         const PASSWORDS = { jancy: 'J404', arya: 'Y234', jabeena: 'J123' };
-
-        // Icons
-        const Icon = ({ d, ...p }) => <svg {...p} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={d} /></svg>;
 
         const App = () => {
             const [user, setUser] = useState(null);
@@ -54,6 +51,16 @@ databaseURL: "https://tuitiontracker-ac584-default-rtdb.asia-southeast1.firebase
             const [editExam, setEditExam] = useState(null);
             const [examMode, setExamMode] = useState(false);
             const [both, setBoth] = useState(false);
+            const [showManagement, setShowManagement] = useState(false);
+            const [showReport, setShowReport] = useState(false);
+            const [editingStudent, setEditingStudent] = useState(null);
+            const [newStudent, setNewStudent] = useState({ name: '', grade: '', time: '', subjects: '', faculty: 'jancy' });
+            const [reportStart, setReportStart] = useState(() => {
+                const d = new Date();
+                d.setDate(d.getDate() - 7);
+                return d.toISOString().split('T')[0];
+            });
+            const [reportEnd, setReportEnd] = useState(new Date().toISOString().split('T')[0]);
 
             useEffect(() => {
                 if (!database) return;
@@ -90,6 +97,83 @@ databaseURL: "https://tuitiontracker-ac584-default-rtdb.asia-southeast1.firebase
                 alert('Saved!');
             };
 
+            const addStudent = () => {
+                if (!newStudent.name || !newStudent.grade || !newStudent.subjects) {
+                    return alert('Please fill all required fields!');
+                }
+                const student = {
+                    id: Date.now(),
+                    name: newStudent.name.toUpperCase(),
+                    grade: newStudent.grade,
+                    time: newStudent.time || '4-6',
+                    subjects: newStudent.subjects.split(',').map(s => s.trim())
+                };
+                const updated = { ...students };
+                updated[newStudent.faculty] = [...(updated[newStudent.faculty] || []), student];
+                if(database) database.ref('students').set(updated);
+                setNewStudent({ name: '', grade: '', time: '', subjects: '', faculty: 'jancy' });
+                alert('Student added!');
+            };
+
+            const updateStudent = () => {
+                if (!editingStudent.name || !editingStudent.grade) {
+                    return alert('Please fill required fields!');
+                }
+                const updated = { ...students };
+                // Remove from all faculties
+                Object.keys(updated).forEach(f => {
+                    updated[f] = updated[f].filter(s => s.id !== editingStudent.id);
+                });
+                // Add to selected faculty
+                const student = {
+                    ...editingStudent,
+                    name: editingStudent.name.toUpperCase(),
+                    subjects: typeof editingStudent.subjects === 'string' 
+                        ? editingStudent.subjects.split(',').map(s => s.trim())
+                        : editingStudent.subjects
+                };
+                updated[editingStudent.faculty] = [...(updated[editingStudent.faculty] || []), student];
+                if(database) database.ref('students').set(updated);
+                setEditingStudent(null);
+                alert('Student updated!');
+            };
+
+            const removeStudent = (fac, sid) => {
+                if (!confirm('Remove this student?')) return;
+                const updated = { ...students };
+                updated[fac] = updated[fac].filter(s => s.id !== sid);
+                if(database) database.ref('students').set(updated);
+            };
+
+            const getDateRange = (start, end) => {
+                const dates = [];
+                const current = new Date(start);
+                const endDate = new Date(end);
+                while (current <= endDate) {
+                    dates.push(new Date(current).toISOString().split('T')[0]);
+                    current.setDate(current.getDate() + 1);
+                }
+                return dates;
+            };
+
+            const calculateWeeklyCoverage = (student) => {
+                const dates = getDateRange(reportStart, reportEnd);
+                const covered = new Set();
+                dates.forEach(d => {
+                    student.subjects.forEach(sub => {
+                        if (data[`${d}-${student.id}-${sub}`]) {
+                            covered.add(sub);
+                        }
+                    });
+                });
+                return {
+                    covered: covered.size,
+                    total: student.subjects.length,
+                    percentage: Math.round((covered.size / student.subjects.length) * 100),
+                    missing: student.subjects.filter(s => !covered.has(s))
+                };
+            };
+
             const colors = { jancy: 'blue', arya: 'green', jabeena: 'gray' };
             const days = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
 
@@ -100,7 +184,7 @@ databaseURL: "https://tuitiontracker-ac584-default-rtdb.asia-southeast1.firebase
                     <div className="bg-white rounded-2xl shadow-2xl p-8 max-w-md w-full">
                         <h1 className="text-3xl font-bold text-center mb-8">Tuition Tracker</h1>
                         <div className="space-y-4">
-                            <button onClick={() => setFaculty('jancy')} className="w-full bg-blue-500 text-white font-bold py-4 rounded-lg hover:bg-blue-600">Jancy</button>
+                            <button onClick={() => setFaculty('jancy')} className="w-full bg-blue-500 text-white font-bold py-4 rounded-lg hover:bg-blue-600">Jancy (Head Faculty)</button>
                             <button onClick={() => setFaculty('arya')} className="w-full bg-green-500 text-white font-bold py-4 rounded-lg hover:bg-green-600">Arya</button>
                             <button onClick={() => setFaculty('jabeena')} className="w-full bg-gray-600 text-white font-bold py-4 rounded-lg hover:bg-gray-700">Jabeena</button>
                         </div>
@@ -122,6 +206,368 @@ databaseURL: "https://tuitiontracker-ac584-default-rtdb.asia-southeast1.firebase
             const list = studs();
             const subs = [...new Set(list.flatMap(s=>s.subjects))].sort();
             const c = colors[user];
+
+            // MANAGEMENT VIEW
+            if(showManagement && user === 'jancy') {
+                return (
+                    <div className="min-h-screen bg-gray-50">
+                        <div className={`bg-${c}-600 text-white p-4`}>
+                            <div className="max-w-7xl mx-auto flex justify-between">
+                                <h1 className="text-xl font-bold">Student Management</h1>
+                                <button onClick={() => setShowManagement(false)} className="bg-white bg-opacity-20 px-4 py-2 rounded hover:bg-opacity-30">Back</button>
+                            </div>
+                        </div>
+
+                    <div className="bg-white border-b p-4">
+                        <div className="max-w-7xl mx-auto flex gap-3 items-center flex-wrap">
+                            <input type="date" value={date} onChange={e=>setDate(e.target.value)} className="border rounded px-4 py-2" />
+                            <label className="flex items-center gap-2 bg-red-50 px-4 py-2 rounded border-2 border-red-300 cursor-pointer ml-auto">
+                                <input type="checkbox" checked={examMode} onChange={e=>{setExamMode(e.target.checked);if(!e.target.checked)setBoth(false);}} className="w-4 h-4" />
+                                <span className="font-bold text-red-900">Exam Mode</span>
+                            </label>
+                            {examMode && (
+                                <label className="flex items-center gap-2 bg-purple-50 px-4 py-2 rounded border-2 border-purple-300 cursor-pointer">
+                                    <input type="checkbox" checked={both} onChange={e=>setBoth(e.target.checked)} className="w-4 h-4" />
+                                    <span className="font-bold text-purple-900">Show Both</span>
+                                </label>
+                            )}
+                        </div>
+                    </div>
+
+                    <div className="max-w-full mx-auto p-4">
+                        <div className="bg-white rounded-lg shadow mb-6 overflow-x-auto">
+                            <table className="w-full text-sm">
+                                <thead>
+                                    <tr className={`bg-${c}-100`}>
+                                        <th className="p-3 border">Student</th>
+                                        <th className="p-3 border">Grade</th>
+                                        <th className="p-3 border">Actions</th>
+                                        {subs.map(s => <th key={s} className="p-3 border">{s}</th>)}
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {list.map(st => (
+                                        <tr key={st.id} className="hover:bg-gray-50">
+                                            <td className="p-3 border font-bold">{st.name}</td>
+                                            <td className="p-3 border text-center">{st.grade}</td>
+                                            <td className="p-3 border text-center">
+                                                <button onClick={()=>setEditSchedule({id:st.id,schedule:schedules[st.id]||{}})} className="text-blue-600 hover:text-blue-800 mx-1" title="Edit Weekly Schedule">✏️</button>
+                                                <button onClick={()=>setEditExam({id:st.id,schedule:exams[st.id]||{}})} className="text-red-600 hover:text-red-800 mx-1" title="Edit Exam Schedule">📚</button>
+                                            </td>
+                                            {subs.map(sub => {
+                                                const has = st.subjects.includes(sub);
+                                                const chk = checked(st.id, sub);
+                                                return has ? (
+                                                    <td key={sub} className={`p-3 border cursor-pointer text-center ${chk?'bg-green-100':'hover:bg-blue-50'}`} onClick={()=>toggle(st.id,sub)}>
+                                                        {chk ? '✅' : '⬜'}
+                                                    </td>
+                                                ) : <td key={sub} className="p-3 border bg-gray-50 text-center">—</td>;
+                                            })}
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+
+                        {(!examMode || both) && (
+                            <div className="bg-blue-50 border-2 border-blue-300 rounded-lg p-6 mb-4">
+                                <h3 className="text-xl font-bold text-blue-900 mb-4">📅 Weekly Schedule</h3>
+                                {list.filter(s=>schedules[s.id]).length > 0 ? (
+                                    list.filter(s=>schedules[s.id]).map(st => (
+                                        <div key={st.id} className="bg-white rounded-lg shadow p-4 mb-4">
+                                            <h4 className="font-bold mb-3">{st.name}</h4>
+                                            <div className="grid grid-cols-6 gap-2">
+                                                {days.map((d,i) => (
+                                                    <div key={d} className="border rounded p-2 bg-blue-50">
+                                                        <h5 className="font-bold text-xs text-center mb-2">{d}</h5>
+                                                        {(schedules[st.id]?.[i]||[]).map(sub => (
+                                                            <div key={sub} className="bg-yellow-100 border border-yellow-300 rounded px-2 py-1 text-xs font-bold text-center mb-1">{sub}</div>
+                                                        ))}
+                                                        {!(schedules[st.id]?.[i]||[]).length && <div className="text-xs text-gray-400 text-center">Not set</div>}
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    ))
+                                ) : (
+                                    <div className="text-center py-8 text-gray-500">
+                                        <p className="mb-2">No weekly schedules set yet</p>
+                                        <p className="text-sm">Click ✏️ next to student name to create schedule</p>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
+                        {examMode && (
+                            <div className="bg-red-50 border-2 border-red-300 rounded-lg p-6">
+                                <h3 className="text-xl font-bold text-red-900 mb-4">📝 Exam Schedule</h3>
+                                {list.filter(s=>exams[s.id]).length > 0 ? (
+                                    list.filter(s=>exams[s.id]).map(st => (
+                                        <div key={st.id} className="bg-white rounded-lg shadow p-4 mb-4">
+                                            <h4 className="font-bold mb-3">{st.name}</h4>
+                                            <div className="grid grid-cols-6 gap-2">
+                                                {days.map((d,i) => (
+                                                    <div key={d} className="border-2 border-red-300 rounded p-2 bg-red-50">
+                                                        <h5 className="font-bold text-xs text-center mb-2 text-red-900">{d}</h5>
+                                                        {exams[st.id]?.[i] ? (
+                                                            <div className="bg-red-200 border-2 border-red-400 rounded px-2 py-2 text-xs font-bold text-center">{exams[st.id][i]}</div>
+                                                        ) : <div className="text-xs text-gray-400 text-center">Not set</div>}
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    ))
+                                ) : (
+                                    <div className="text-center py-8 text-gray-500">
+                                        <p className="mb-2">No exam schedules set yet</p>
+                                        <p className="text-sm">Click 📚 next to student name to create exam schedule</p>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
+                        <div className="mt-6 bg-gradient-to-r from-blue-50 to-purple-50 rounded-lg p-6 border-2 border-blue-300">
+                            <h3 className="font-bold text-lg mb-3 text-blue-900">📖 How to Use:</h3>
+                            <div className="grid md:grid-cols-2 gap-4 text-sm">
+                                <div>
+                                    <h4 className="font-bold mb-2 text-blue-800">Daily Tracking:</h4>
+                                    <ul className="space-y-1">
+                                        <li>✅ Click checkbox to mark subject as taught</li>
+                                        <li>📅 Select date to track different days</li>
+                                        <li>⬜ Empty boxes = not taught yet</li>
+                                        <li>— Gray dash = student doesn't have that subject</li>
+                                    </ul>
+                                </div>
+                                <div>
+                                    <h4 className="font-bold mb-2 text-blue-800">Schedule Management:</h4>
+                                    <ul className="space-y-1">
+                                        <li>✏️ Click pencil to set weekly schedule (multiple subjects/day)</li>
+                                        <li>📚 Click book to set exam schedule (1 subject/day)</li>
+                                        <li>🎯 Enable "Exam Mode" to show exam timetable</li>
+                                        <li>👥 Check "Show Both" to display both schedules</li>
+                                    </ul>
+                                </div>
+                                <div>
+                                    <h4 className="font-bold mb-2 text-blue-800">Reports & Management:</h4>
+                                    <ul className="space-y-1">
+                                        <li>📊 Click "Report" to view weekly coverage statistics</li>
+                                        {user === 'jancy' && <li>⚙️ Click "Manage" to add/edit/remove students</li>}
+                                        <li>📈 Track which subjects are missing</li>
+                                        <li>🎯 See coverage percentages for each student</li>
+                                    </ul>
+                                </div>
+                                <div>
+                                    <h4 className="font-bold mb-2 text-blue-800">Access:</h4>
+                                    <ul className="space-y-1">
+                                        {user === 'jancy' && (
+                                            <>
+                                                <li>🔑 Jancy: J404 (Head Faculty - Full Access)</li>
+                                                <li>🔑 Arya: Y234</li>
+                                                <li>🔑 Jabeena: J123</li>
+                                            </>
+                                        )}
+                                        <li>💾 All data saved automatically to Firebase</li>
+                                        <li>🌐 Access from any device</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        ReactDOM.render(<App />, document.getElementById('root'));
+    </script>
+</body>
+</html>    <div className="max-w-7xl mx-auto p-4">
+                            <div className="bg-white rounded-lg shadow p-6 mb-6">
+                                <h2 className="text-xl font-bold mb-4">{editingStudent ? 'Edit Student' : 'Add Student'}</h2>
+                                <div className="grid md:grid-cols-2 gap-4">
+                                    <input type="text" placeholder="Name" value={editingStudent ? editingStudent.name : newStudent.name}
+                                        onChange={e => editingStudent ? setEditingStudent({...editingStudent, name: e.target.value}) : setNewStudent({...newStudent, name: e.target.value})}
+                                        className="border rounded px-4 py-2" />
+                                    <input type="text" placeholder="Grade" value={editingStudent ? editingStudent.grade : newStudent.grade}
+                                        onChange={e => editingStudent ? setEditingStudent({...editingStudent, grade: e.target.value}) : setNewStudent({...newStudent, grade: e.target.value})}
+                                        className="border rounded px-4 py-2" />
+                                    <input type="text" placeholder="Time" value={editingStudent ? editingStudent.time : newStudent.time}
+                                        onChange={e => editingStudent ? setEditingStudent({...editingStudent, time: e.target.value}) : setNewStudent({...newStudent, time: e.target.value})}
+                                        className="border rounded px-4 py-2" />
+                                    <input type="text" placeholder="Subjects (comma separated)" 
+                                        value={editingStudent ? (Array.isArray(editingStudent.subjects) ? editingStudent.subjects.join(', ') : editingStudent.subjects) : newStudent.subjects}
+                                        onChange={e => editingStudent ? setEditingStudent({...editingStudent, subjects: e.target.value}) : setNewStudent({...newStudent, subjects: e.target.value})}
+                                        className="border rounded px-4 py-2" />
+                                    <select value={editingStudent ? editingStudent.faculty : newStudent.faculty}
+                                        onChange={e => editingStudent ? setEditingStudent({...editingStudent, faculty: e.target.value}) : setNewStudent({...newStudent, faculty: e.target.value})}
+                                        className="border rounded px-4 py-2">
+                                        <option value="jancy">Jancy</option>
+                                        <option value="arya">Arya</option>
+                                        <option value="jabeena">Jabeena</option>
+                                    </select>
+                                    {editingStudent ? (
+                                        <div className="flex gap-2">
+                                            <button onClick={updateStudent} className="flex-1 bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">Update</button>
+                                            <button onClick={() => setEditingStudent(null)} className="flex-1 bg-gray-400 text-white px-4 py-2 rounded hover:bg-gray-500">Cancel</button>
+                                        </div>
+                                    ) : (
+                                        <button onClick={addStudent} className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">Add Student</button>
+                                    )}
+                                </div>
+                            </div>
+
+                            {Object.keys(students).map(fac => (
+                                <div key={fac} className="bg-white rounded-lg shadow p-6 mb-4">
+                                    <h3 className="text-lg font-bold mb-4 capitalize">{fac} ({students[fac].length} students)</h3>
+                                    <div className="overflow-x-auto">
+                                        <table className="w-full text-sm">
+                                            <thead>
+                                                <tr className="bg-gray-100">
+                                                    <th className="p-2 border">Name</th>
+                                                    <th className="p-2 border">Grade</th>
+                                                    <th className="p-2 border">Time</th>
+                                                    <th className="p-2 border">Subjects</th>
+                                                    <th className="p-2 border">Actions</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {students[fac].map(st => (
+                                                    <tr key={st.id} className="hover:bg-gray-50">
+                                                        <td className="p-2 border">{st.name}</td>
+                                                        <td className="p-2 border text-center">{st.grade}</td>
+                                                        <td className="p-2 border text-center">{st.time}</td>
+                                                        <td className="p-2 border text-xs">{st.subjects.join(', ')}</td>
+                                                        <td className="p-2 border text-center">
+                                                            <button onClick={() => setEditingStudent({...st, faculty: fac})} className="text-blue-600 hover:text-blue-800 mx-1">✏️</button>
+                                                            <button onClick={() => removeStudent(fac, st.id)} className="text-red-600 hover:text-red-800 mx-1">🗑️</button>
+                                                        </td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                );
+            }
+
+            // REPORT VIEW
+            if(showReport) {
+                const reportStudents = user === 'jancy' 
+                    ? [
+                        ...students.jancy.map(s => ({ ...s, faculty: 'Jancy' })),
+                        ...students.arya.map(s => ({ ...s, faculty: 'Arya' })),
+                        ...students.jabeena.map(s => ({ ...s, faculty: 'Jabeena' }))
+                    ]
+                    : students[user].map(s => ({ ...s, faculty: user }));
+
+                return (
+                    <div className="min-h-screen bg-gray-50">
+                        <div className={`bg-${c}-600 text-white p-4`}>
+                            <div className="max-w-7xl mx-auto flex justify-between">
+                                <h1 className="text-xl font-bold">Weekly Coverage Report</h1>
+                                <button onClick={() => setShowReport(false)} className="bg-white bg-opacity-20 px-4 py-2 rounded hover:bg-opacity-30">Back</button>
+                            </div>
+                        </div>
+
+                        <div className="max-w-7xl mx-auto p-4">
+                            <div className="bg-white rounded-lg shadow p-4 mb-4">
+                                <h3 className="font-bold mb-3">Report Period</h3>
+                                <div className="flex gap-4 flex-wrap">
+                                    <div>
+                                        <label className="block text-sm mb-1">Start Date</label>
+                                        <input type="date" value={reportStart} onChange={e => setReportStart(e.target.value)} className="border rounded px-4 py-2" />
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm mb-1">End Date</label>
+                                        <input type="date" value={reportEnd} onChange={e => setReportEnd(e.target.value)} className="border rounded px-4 py-2" />
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="bg-white rounded-lg shadow p-6 overflow-x-auto">
+                                <table className="w-full text-sm">
+                                    <thead>
+                                        <tr className="bg-gray-100">
+                                            {user === 'jancy' && <th className="p-2 border">Faculty</th>}
+                                            <th className="p-2 border">Student</th>
+                                            <th className="p-2 border">Grade</th>
+                                            <th className="p-2 border">Total Subjects</th>
+                                            <th className="p-2 border">Covered</th>
+                                            <th className="p-2 border">Coverage %</th>
+                                            <th className="p-2 border">Missing Subjects</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {reportStudents.map(st => {
+                                            const coverage = calculateWeeklyCoverage(st);
+                                            return (
+                                                <tr key={`${st.faculty}-${st.id}`} className="hover:bg-gray-50">
+                                                    {user === 'jancy' && (
+                                                        <td className="p-2 border">
+                                                            <span className={`px-2 py-1 rounded text-xs ${
+                                                                st.faculty === 'Jancy' ? 'bg-blue-100 text-blue-800' :
+                                                                st.faculty === 'Arya' ? 'bg-green-100 text-green-800' : 
+                                                                'bg-gray-100 text-gray-800'
+                                                            }`}>
+                                                                {st.faculty}
+                                                            </span>
+                                                        </td>
+                                                    )}
+                                                    <td className="p-2 border font-semibold">{st.name}</td>
+                                                    <td className="p-2 border text-center">{st.grade}</td>
+                                                    <td className="p-2 border text-center">{coverage.total}</td>
+                                                    <td className="p-2 border text-center">{coverage.covered}</td>
+                                                    <td className="p-2 border text-center">
+                                                        <span className={`px-3 py-1 rounded-full font-bold ${
+                                                            coverage.percentage === 100 ? 'bg-green-100 text-green-800' :
+                                                            coverage.percentage >= 70 ? 'bg-yellow-100 text-yellow-800' :
+                                                            coverage.percentage >= 50 ? 'bg-orange-100 text-orange-800' :
+                                                            'bg-red-100 text-red-800'
+                                                        }`}>
+                                                            {coverage.percentage}%
+                                                        </span>
+                                                    </td>
+                                                    <td className="p-2 border text-xs">
+                                                        {coverage.missing.length > 0 ? (
+                                                            <span className="text-red-600">{coverage.missing.join(', ')}</span>
+                                                        ) : (
+                                                            <span className="text-green-600 font-bold">✓ Complete</span>
+                                                        )}
+                                                    </td>
+                                                </tr>
+                                            );
+                                        })}
+                                    </tbody>
+                                </table>
+                            </div>
+
+                            <div className="mt-4 bg-blue-50 border border-blue-300 rounded-lg p-4">
+                                <h4 className="font-bold mb-2">📊 Coverage Legend:</h4>
+                                <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-sm">
+                                    <div className="flex items-center gap-2">
+                                        <span className="px-3 py-1 rounded-full bg-green-100 text-green-800 font-bold">100%</span>
+                                        <span>Complete</span>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        <span className="px-3 py-1 rounded-full bg-yellow-100 text-yellow-800 font-bold">70-99%</span>
+                                        <span>Good</span>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        <span className="px-3 py-1 rounded-full bg-orange-100 text-orange-800 font-bold">50-69%</span>
+                                        <span>Fair</span>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        <span className="px-3 py-1 rounded-full bg-red-100 text-red-800 font-bold">&lt;50%</span>
+                                        <span>Needs Attention</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                );
+            }
 
             if(editSchedule) {
                 const st = list.find(s=>s.id===editSchedule.id);
@@ -157,7 +603,7 @@ databaseURL: "https://tuitiontracker-ac584-default-rtdb.asia-southeast1.firebase
                 );
             }
 
-            if(editExam) {
+           if(editExam) {
                 const st = list.find(s=>s.id===editExam.id);
                 return (
                     <div className="min-h-screen bg-gray-50 p-4">
