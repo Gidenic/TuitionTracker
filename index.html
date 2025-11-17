@@ -1,23 +1,285 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Tuition Centre Tracker - Firebase</title>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
+  <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+  <script src="https://unpkg.com/babel-standalone@6/babel.min.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100">
+  <div id="root"></div>
+
+  <script type="text/babel">
+    // Firebase config will be defined once below inside the main script
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.firestore();
+    const auth = firebase.auth();
+
+    const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+
+    function App() {
+      const [user, setUser] = React.useState(null);
+      const [tab, setTab] = React.useState("dashboard");
+      const [students, setStudents] = React.useState([]);
+      const [subjectData, setSubjectData] = React.useState([]);
+      const [scheduleList, setScheduleList] = React.useState([]);
+      const [examList, setExamList] = React.useState([]);
+      const [editSchedule, setEditSchedule] = React.useState(null);
+      const [editExam, setEditExam] = React.useState(null);
+
+      React.useEffect(() => {
+        auth.onAuthStateChanged(u => {
+          setUser(u);
+          if (u) {
+            loadStudents();
+            loadSubjects();
+            loadSchedule();
+            loadExams();
+          }
+        });
+      }, []);
+
+      const loadStudents = async () => {
+        const s = await db.collection("students").orderBy("name").get();
+        setStudents(s.docs.map(d => ({ id: d.id, ...d.data() })));
+      };
+
+      const loadSubjects = async () => {
+        const s = await db.collection("subjects").get();
+        setSubjectData(s.docs.map(d => ({ id: d.id, ...d.data() })));
+      };
+
+      const loadSchedule = async () => {
+        const s = await db.collection("schedule").get();
+        setScheduleList(s.docs.map(d => ({ id: d.id, ...d.data() })));
+      };
+
+      const loadExams = async () => {
+        const e = await db.collection("exams").get();
+        setExamList(e.docs.map(d => ({ id: d.id, ...d.data() })));
+      };
+
+      const logout = () => auth.signOut();
+
+      if (!user) return (<Login />);
+
+      // ============ EDIT SCHEDULE PAGE ============
+      if (editSchedule) {
+        const st = scheduleList.find(s => s.id === editSchedule.id);
+        if (!st) return null;
+        const [subj, setSubj] = React.useState(st.subject);
+        const [teacher, setTeacher] = React.useState(st.teacher);
+        const [time, setTime] = React.useState(st.time);
+        const save = async () => {
+          await db.collection("schedule").doc(st.id).update({ subject: subj, teacher, time });
+          loadSchedule();
+          setEditSchedule(null);
+        };
+
+        return (
+          <div className="p-6">
+            <div className="max-w-xl mx-auto bg-white p-6 rounded shadow">
+              <h2 className="text-xl font-bold mb-4">Edit Schedule</h2>
+              <input className="border p-2 w-full mb-2" value={subj} onChange={e => setSubj(e.target.value)} />
+              <input className="border p-2 w-full mb-2" value={teacher} onChange={e => setTeacher(e.target.value)} />
+              <input className="border p-2 w-full mb-2" value={time} onChange={e => setTime(e.target.value)} />
+              <div className="flex gap-2 mt-3">
+                <button className="bg-blue-500 text-white px-4 py-2 rounded" onClick={save}>Save</button>
+                <button className="bg-gray-400 text-white px-4 py-2 rounded" onClick={() => setEditSchedule(null)}>Cancel</button>
+              </div>
+            </div>
+          </div>
+        );
+      }
+
+      // ============ EDIT EXAM PAGE ============
+      if (editExam) {
+        const ex = examList.find(s => s.id === editExam.id);
+        const [subj, setSubj] = React.useState(ex.subject);
+        const [date, setDate] = React.useState(ex.date);
+        const save = async () => {
+          await db.collection("exams").doc(ex.id).update({ subject: subj, date });
+          loadExams();
+          setEditExam(null);
+        };
+        return (
+          <div className="p-6">
+            <div className="max-w-xl mx-auto bg-white p-6 rounded shadow">
+              <h2 className="text-xl font-bold mb-4">Edit Exam</h2>
+              <input className="border p-2 w-full mb-2" value={subj} onChange={e => setSubj(e.target.value)} />
+              <input className="border p-2 w-full mb-2" value={date} onChange={e => setDate(e.target.value)} />
+              <div className="flex gap-2 mt-3">
+                <button className="bg-blue-500 text-white px-4 py-2 rounded" onClick={save}>Save</button>
+                <button className="bg-gray-400 text-white px-4 py-2 rounded" onClick={() => setEditExam(null)}>Cancel</button>
+              </div>
+            </div>
+          </div>
+        );
+      }
+
+      return (
+        <div className="min-h-screen flex">
+          <div className="w-56 bg-white shadow p-4">
+            <h1 className="font-bold text-lg mb-4">Tuition Tracker</h1>
+            <div className="space-y-2">
+              <button onClick={() => setTab("dashboard")} className="w-full bg-gray-200 p-2 rounded">Dashboard</button>
+              <button onClick={() => setTab("schedule")} className="w-full bg-gray-200 p-2 rounded">Schedule</button>
+              <button onClick={() => setTab("exams")} className="w-full bg-gray-200 p-2 rounded">Exams</button>
+              <button onClick={logout} className="w-full bg-red-400 p-2 rounded text-white">Logout</button>
+            </div>
+          </div>
+
+          <div className="flex-1 p-6 overflow-y-auto">
+            {tab === "dashboard" && <Dashboard students={students} subjects={subjectData} db={db} />}
+            {tab === "schedule" && <SchedulePage list={scheduleList} setEdit={setEditSchedule} />}
+            {tab === "exams" && <ExamPage list={examList} setEdit={setEditExam} />}
+          </div>
+        </div>
+      );
+    }
+
+    function Dashboard({ students, subjects, db }) {
+      const toggle = async (studentId, subjectId, day) => {
+        const ref = db.collection("attendance").doc(`${studentId}_${subjectId}`);
+        const snap = await ref.get();
+        let data = snap.exists ? snap.data() : { days: {} };
+        data.days[day] = !data.days[day];
+        ref.set(data);
+      };
+
+      return (
+        <div>
+          <h2 className="text-xl font-bold mb-4">Daily Marking</h2>
+          <div className="space-y-4">
+            {students.map(st => (
+              <div key={st.id} className="bg-white p-4 rounded shadow">
+                <h3 className="font-bold text-lg mb-2">{st.name}</h3>
+                <table className="w-full text-left">
+                  <thead><tr><th>Subject</th>{DAYS.map(d => <th key={d}>{d}</th>)}</tr></thead>
+                  <tbody>
+                    {subjects.map(sub => (
+                      <tr key={sub.id} className="border-t">
+                        <td className="py-2">{sub.name}</td>
+                        {DAYS.map(d => (
+                          <td key={d}>
+                            <button onClick={() => toggle(st.id, sub.id, d)} className="px-2 py-1 bg-gray-200 rounded">✔</button>
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+    }
+
+    function SchedulePage({ list, setEdit }) {
+      return (
+        <div>
+          <h2 className="text-xl font-bold mb-4">Schedule</h2>
+          <div className="space-y-3">
+            {list.map(s => (
+              <div key={s.id} className="bg-white p-4 rounded shadow flex justify-between">
+                <div>
+                  <div className="font-bold">{s.subject}</div>
+                  <div>{s.teacher}</div>
+                  <div>{s.time}</div>
+                </div>
+                <button className="bg-blue-500 text-white px-3 py-1 rounded" onClick={() => setEdit(s)}>Edit</button>
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+    }
+
+    function ExamPage({ list, setEdit }) {
+      return (
+        <div>
+          <h2 className="text-xl font-bold mb-4">Exams</h2>
+          <div className="space-y-3">
+            {list.map(ex => (
+              <div key={ex.id} className="bg-white p-4 rounded shadow flex justify-between">
+                <div>
+                  <div className="font-bold">{ex.subject}</div>
+                  <div>{ex.date}</div>
+                </div>
+                <button className="bg-blue-500 text-white px-3 py-1 rounded" onClick={() => setEdit(ex)}>Edit</button>
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+    }
+
+    function Login() {
+      const [email, setEmail] = React.useState("");
+      const [password, setPassword] = React.useState("");
+
+      const login = () => auth.signInWithEmailAndPassword(email, password).catch(alert);
+
+      return (
+        <div className="h-screen flex items-center justify-center">
+          <div className="bg-white p-6 rounded shadow w-80">
+            <h2 className="text-xl font-bold mb-4">Login</h2>
+            <input className="border p-2 w-full mb-2" placeholder="Email" value={email} onChange={e => setEmail(e.target.value)} />
+            <input className="border p-2 w-full mb-2" type="password" placeholder="Password" value={password} onChange={e => setPassword(e.target.value)} />
+            <button className="bg-blue-500 text-white w-full p-2 rounded" onClick={login}>Login</button>
+          </div>
+        </div>
+      );
+    }
+
+    ReactDOM.render(<App />, document.getElementById('root'));
+  </script>
+</body>
+</html><!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Tuition Centre Tracker - Firebase</title>
+
+    <!-- Firebase -->
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
-    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
+
+    <!-- React -->
+    <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
+    <script src="https://unpkg.com/babel-standalone@6/babel.min.js"></script>
+
+    <!-- Icons -->
+    <script src="https://unpkg.com/lucide-react/dist/umd/lucide-react.min.js"></script>
+
+    <style>
+        body {
+            margin: 0;
+            font-family: Arial, sans-serif;
+            background: #f3f4f6;
+        }
+        .btn { padding: 8px 12px; border-radius: 6px; cursor: pointer; }
+        .card { background:white; padding:20px; border-radius:10px; box-shadow:0 2px 6px rgba(0,0,0,0.1); }
+    </style>
 </head>
 <body>
     <div id="root"></div>
-    <script type="text/babel">
-        const { useState, useEffect } = React;
 
-        // 🔥 REPLACE WITH YOUR FIREBASE CONFIG
-        const firebaseConfig = {
+<script type="text/babel">
+/**************************************************
+   FIREBASE INITIALIZATION
+**************************************************/
+const firebaseConfig = {
             apiKey: "AIzaSyCIi6V8Q7zlKLd7BmjyylD87fLBaKkO65U",
             authDomain: "tuitiontracker-ac584.firebaseapp.com",
             projectId: "tuitiontracker-ac584",
@@ -27,739 +289,230 @@
             databaseURL: "https://tuitiontracker-ac584-default-rtdb.asia-southeast1.firebasedatabase.app/"
         };
 
-        let database;
+firebase.initializeApp(firebaseConfig);
+const db = firebase.firestore();
+const auth = firebase.auth();
+
+/**************************************************
+  REACT APP
+**************************************************/
+const { useState, useEffect } = React;
+
+function App() {
+    const [user, setUser] = useState(null);
+
+    useEffect(() => {
+        const unsubscribe = auth.onAuthStateChanged(u => setUser(u));
+        return unsubscribe;
+    }, []);
+
+    if (!user) return <LoginPage />;
+    return <Dashboard user={user} />;
+}
+
+/**************************************************
+ LOGIN PAGE
+**************************************************/
+function LoginPage() {
+    const [email, setEmail] = useState("");
+    const [pass, setPass] = useState("");
+    const [error, setError] = useState("");
+
+    const login = async () => {
         try {
-            if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
-            database = firebase.database();
-        } catch (error) {
-            console.error("Firebase error:", error);
+            await auth.signInWithEmailAndPassword(email, pass);
+        } catch (e) {
+            setError(e.message);
         }
+    };
 
-        const PASSWORDS = { jancy: 'J404', arya: 'Y234', jabeena: 'J123' };
+    return (
+        <div style={{ padding: "40px", maxWidth: "400px", margin: "80px auto" }}>
+            <div className="card">
+                <h2>Login</h2>
+                <input placeholder="Email" value={email} onChange={e=>setEmail(e.target.value)} /><br /><br />
+                <input placeholder="Password" type="password" value={pass} onChange={e=>setPass(e.target.value)} /><br /><br />
+                <button className="btn" onClick={login}>Login</button>
+                {error && <p style={{color:"red"}}>{error}</p>}
+            </div>
+        </div>
+    );
+}
 
-        const App = () => {
-            const [user, setUser] = useState(null);
-            const [faculty, setFaculty] = useState(null);
-            const [pwd, setPwd] = useState('');
-            const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
-            const [data, setData] = useState({});
-            const [students, setStudents] = useState({ jancy: [], arya: [], jabeena: [] });
-            const [schedules, setSchedules] = useState({});
-            const [exams, setExams] = useState({});
-            const [loading, setLoading] = useState(true);
-            const [editSchedule, setEditSchedule] = useState(null);
-            const [editExam, setEditExam] = useState(null);
-            const [examMode, setExamMode] = useState(false);
-            const [both, setBoth] = useState(false);
-            const [showManagement, setShowManagement] = useState(false);
-            const [showReport, setShowReport] = useState(false);
-            const [editingStudent, setEditingStudent] = useState(null);
-            const [newStudent, setNewStudent] = useState({ name: '', grade: '', time: '', subjects: '', faculty: 'jancy' });
-            const [reportStart, setReportStart] = useState(() => {
-                const d = new Date();
-                d.setDate(d.getDate() - 7);
-                return d.toISOString().split('T')[0];
-            });
-            const [reportEnd, setReportEnd] = useState(new Date().toISOString().split('T')[0]);
+/**************************************************
+ DASHBOARD + MENU
+**************************************************/
+function Dashboard() {
+    const [tab, setTab] = useState("students");
 
-            useEffect(() => {
-                if (!database) return;
-                database.ref('students').on('value', s => { if(s.exists()) setStudents(s.val()); setLoading(false); });
-                database.ref('weeklyData').on('value', s => { if(s.exists()) setData(s.val()); });
-                database.ref('schedules').on('value', s => { if(s.exists()) setSchedules(s.val()); });
-                database.ref('examSchedules').on('value', s => { if(s.exists()) setExams(s.val()); });
-            }, []);
+    const logout = () => auth.signOut();
 
-            const login = () => {
-                if (pwd === PASSWORDS[faculty]) { setUser(faculty); setPwd(''); }
-                else { alert('Wrong password!'); setPwd(''); }
-            };
+    return (
+        <div style={{ display: "flex" }}>
+            <div style={{ width: "220px", background: "#1f2937", color: "white", height: "100vh", padding: "20px" }}>
+                <h2>Menu</h2>
+                <p className="btn" onClick={() => setTab("students")}>Students</p>
+                <p className="btn" onClick={() => setTab("subjects")}>Subjects</p>
+                <p className="btn" onClick={() => setTab("schedule")}>Class Schedule</p>
+                <p className="btn" onClick={() => setTab("exams")}>Exam Schedule</p>
+                <p className="btn" onClick={() => setTab("reports")}>Reports</p>
+                <p className="btn" onClick={logout} style={{ marginTop: "40px", background: "#dc2626" }}>Logout</p>
+            </div>
 
-            const grade = (g) => (g === 'LKG' || g === 'UKG') ? 0 : parseInt(g) || 0;
-            const studs = () => !user ? [] : [...(students[user] || [])].sort((a,b) => grade(a.grade) - grade(b.grade));
-            const toggle = (sid, sub) => {
-                const k = `${date}-${sid}-${sub}`;
-                if(database) database.ref(`weeklyData/${k}`).set(!data[k]);
-            };
-            const checked = (sid, sub) => data[`${date}-${sid}-${sub}`] || false;
+            <div style={{ padding: "20px", width: "100%" }}>
+                {tab === "students" && <Students />}
+                {tab === "subjects" && <Subjects />}
+                {tab === "schedule" && <ClassSchedule />}
+                {tab === "exams" && <Exams />}
+                {tab === "reports" && <Reports />}
+            </div>
+        </div>
+    );
+}
 
-            const saveSchedule = () => {
-                if(!editSchedule?.schedule) return alert('Set schedule');
-                if(database) database.ref(`schedules/${editSchedule.id}`).set(editSchedule.schedule);
-                setEditSchedule(null);
-                alert('Saved!');
-            };
+/**************************************************
+ STUDENTS PAGE
+**************************************************/
+function Students() {
+    const [list, setList] = useState([]);
+    const [name, setName] = useState("");
 
-            const saveExam = () => {
-                if(!editExam?.schedule) return alert('Set exam schedule');
-                if(database) database.ref(`examSchedules/${editExam.id}`).set(editExam.schedule);
-                setEditExam(null);
-                alert('Saved!');
-            };
+    useEffect(() => {
+        return db.collection("students").onSnapshot(snap => {
+            setList(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+        });
+    }, []);
 
-            const addStudent = () => {
-                if (!newStudent.name || !newStudent.grade || !newStudent.subjects) {
-                    return alert('Please fill all required fields!');
-                }
-                const student = {
-                    id: Date.now(),
-                    name: newStudent.name.toUpperCase(),
-                    grade: newStudent.grade,
-                    time: newStudent.time || '4-6',
-                    subjects: newStudent.subjects.split(',').map(s => s.trim())
-                };
-                const updated = { ...students };
-                updated[newStudent.faculty] = [...(updated[newStudent.faculty] || []), student];
-                if(database) database.ref('students').set(updated);
-                setNewStudent({ name: '', grade: '', time: '', subjects: '', faculty: 'jancy' });
-                alert('Student added!');
-            };
+    const add = async () => {
+        if (!name) return;
+        await db.collection("students").add({ name });
+        setName("");
+    };
 
-            const updateStudent = () => {
-                if (!editingStudent.name || !editingStudent.grade) {
-                    return alert('Please fill required fields!');
-                }
-                const updated = { ...students };
-                // Remove from all faculties
-                Object.keys(updated).forEach(f => {
-                    updated[f] = updated[f].filter(s => s.id !== editingStudent.id);
-                });
-                // Add to selected faculty
-                const student = {
-                    ...editingStudent,
-                    name: editingStudent.name.toUpperCase(),
-                    subjects: typeof editingStudent.subjects === 'string' 
-                        ? editingStudent.subjects.split(',').map(s => s.trim())
-                        : editingStudent.subjects
-                };
-                updated[editingStudent.faculty] = [...(updated[editingStudent.faculty] || []), student];
-                if(database) database.ref('students').set(updated);
-                setEditingStudent(null);
-                alert('Student updated!');
-            };
+    return (
+        <div>
+            <h2>Students</h2>
+            <input value={name} placeholder="New Student" onChange={e=>setName(e.target.value)} />
+            <button className="btn" onClick={add}>Add</button>
 
-            const removeStudent = (fac, sid) => {
-                if (!confirm('Remove this student?')) return;
-                const updated = { ...students };
-                updated[fac] = updated[fac].filter(s => s.id !== sid);
-                if(database) database.ref('students').set(updated);
-            };
+            <ul>
+                {list.map(s => <li key={s.id}>{s.name}</li>)}
+            </ul>
+        </div>
+    );
+}
 
-            const getDateRange = (start, end) => {
-                const dates = [];
-                const current = new Date(start);
-                const endDate = new Date(end);
-                while (current <= endDate) {
-                    dates.push(new Date(current).toISOString().split('T')[0]);
-                    current.setDate(current.getDate() + 1);
-                }
-                return dates;
-            };
+/**************************************************
+ SUBJECT PAGE
+**************************************************/
+function Subjects() {
+    const [list, setList] = useState([]);
+    const [name, setName] = useState("");
 
-            const calculateWeeklyCoverage = (student) => {
-                const dates = getDateRange(reportStart, reportEnd);
-                const covered = new Set();
-                dates.forEach(d => {
-                    student.subjects.forEach(sub => {
-                        if (data[`${d}-${student.id}-${sub}`]) {
-                            covered.add(sub);
-                        }
-                    });
-                });
-                return {
-                    covered: covered.size,
-                    total: student.subjects.length,
-                    percentage: Math.round((covered.size / student.subjects.length) * 100),
-                    missing: student.subjects.filter(s => !covered.has(s))
-                };
-            };
+    useEffect(() => {
+        return db.collection("subjects").onSnapshot(snap => {
+            setList(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+        });
+    }, []);
 
-            const colors = { jancy: 'blue', arya: 'green', jabeena: 'gray' };
-            const days = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+    const add = async () => {
+        if (!name) return;
+        await db.collection("subjects").add({ name });
+        setName("");
+    };
 
-            if(loading) return <div className="min-h-screen flex items-center justify-center"><div className="animate-spin h-16 w-16 border-4 border-purple-600 border-t-transparent rounded-full"></div></div>;
+    return (
+        <div>
+            <h2>Subjects</h2>
+            <input value={name} placeholder="New Subject" onChange={e=>setName(e.target.value)} />
+            <button className="btn" onClick={add}>Add</button>
 
-            if(!faculty) return (
-                <div className="min-h-screen bg-gradient-to-br from-blue-500 via-purple-500 to-pink-500 flex items-center justify-center p-4">
-                    <div className="bg-white rounded-2xl shadow-2xl p-8 max-w-md w-full">
-                        <h1 className="text-3xl font-bold text-center mb-8">Tuition Tracker</h1>
-                        <div className="space-y-4">
-                            <button onClick={() => setFaculty('jancy')} className="w-full bg-blue-500 text-white font-bold py-4 rounded-lg hover:bg-blue-600">Jancy (Head Faculty)</button>
-                            <button onClick={() => setFaculty('arya')} className="w-full bg-green-500 text-white font-bold py-4 rounded-lg hover:bg-green-600">Arya</button>
-                            <button onClick={() => setFaculty('jabeena')} className="w-full bg-gray-600 text-white font-bold py-4 rounded-lg hover:bg-gray-700">Jabeena</button>
-                        </div>
-                    </div>
-                </div>
-            );
+            <ul>
+                {list.map(s => <li key={s.id}>{s.name}</li>)}
+            </ul>
+        </div>
+    );
+}
 
-            if(!user) return (
-                <div className="min-h-screen bg-gradient-to-br from-blue-500 via-purple-500 to-pink-500 flex items-center justify-center p-4">
-                    <div className="bg-white rounded-2xl shadow-2xl p-8 max-w-md w-full">
-                        <h2 className="text-2xl font-bold text-center mb-4 capitalize">{faculty}</h2>
-                        <input type="password" value={pwd} onChange={e=>setPwd(e.target.value)} onKeyPress={e=>e.key==='Enter'&&login()} placeholder="Password" className="w-full px-4 py-3 border-2 rounded-lg mb-4 text-center" autoFocus />
-                        <button onClick={login} className="w-full bg-purple-600 text-white font-bold py-3 rounded-lg hover:bg-purple-700 mb-2">Login</button>
-                        <button onClick={()=>setFaculty(null)} className="w-full bg-gray-300 text-gray-700 font-bold py-3 rounded-lg hover:bg-gray-400">Back</button>
-                    </div>
-                </div>
-            );
+/**************************************************
+ CLASS SCHEDULE PAGE
+**************************************************/
+function ClassSchedule() {
+    const [schedule, setSchedule] = useState([]);
+    const [day, setDay] = useState("");
+    const [subject, setSubject] = useState("");
 
-            const list = studs();
-            const subs = [...new Set(list.flatMap(s=>s.subjects))].sort();
-            const c = colors[user];
+    useEffect(() => {
+        return db.collection("schedule").onSnapshot(snap => {
+            setSchedule(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+        });
+    }, []);
 
-            // MANAGEMENT VIEW
-            if(showManagement && user === 'jancy') {
-                return (
-                    <div className="min-h-screen bg-gray-50">
-                        <div className={`bg-${c}-600 text-white p-4`}>
-                            <div className="max-w-7xl mx-auto flex justify-between">
-                                <h1 className="text-xl font-bold">Student Management</h1>
-                                <button onClick={() => setShowManagement(false)} className="bg-white bg-opacity-20 px-4 py-2 rounded hover:bg-opacity-30">Back</button>
-                            </div>
-                        </div>
+    const add = async () => {
+        if (!day || !subject) return;
+        await db.collection("schedule").add({ day, subject });
+    };
 
-                    <div className="bg-white border-b p-4">
-                        <div className="max-w-7xl mx-auto flex gap-3 items-center flex-wrap">
-                            <input type="date" value={date} onChange={e=>setDate(e.target.value)} className="border rounded px-4 py-2" />
-                            <label className="flex items-center gap-2 bg-red-50 px-4 py-2 rounded border-2 border-red-300 cursor-pointer ml-auto">
-                                <input type="checkbox" checked={examMode} onChange={e=>{setExamMode(e.target.checked);if(!e.target.checked)setBoth(false);}} className="w-4 h-4" />
-                                <span className="font-bold text-red-900">Exam Mode</span>
-                            </label>
-                            {examMode && (
-                                <label className="flex items-center gap-2 bg-purple-50 px-4 py-2 rounded border-2 border-purple-300 cursor-pointer">
-                                    <input type="checkbox" checked={both} onChange={e=>setBoth(e.target.checked)} className="w-4 h-4" />
-                                    <span className="font-bold text-purple-900">Show Both</span>
-                                </label>
-                            )}
-                        </div>
-                    </div>
+    return (
+        <div>
+            <h2>Class Schedule</h2>
+            <input placeholder="Day" value={day} onChange={e=>setDay(e.target.value)} />
+            <input placeholder="Subject" value={subject} onChange={e=>setSubject(e.target.value)} />
+            <button className="btn" onClick={add}>Add</button>
 
-                    <div className="max-w-full mx-auto p-4">
-                        <div className="bg-white rounded-lg shadow mb-6 overflow-x-auto">
-                            <table className="w-full text-sm">
-                                <thead>
-                                    <tr className={`bg-${c}-100`}>
-                                        <th className="p-3 border">Student</th>
-                                        <th className="p-3 border">Grade</th>
-                                        <th className="p-3 border">Actions</th>
-                                        {subs.map(s => <th key={s} className="p-3 border">{s}</th>)}
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {list.map(st => (
-                                        <tr key={st.id} className="hover:bg-gray-50">
-                                            <td className="p-3 border font-bold">{st.name}</td>
-                                            <td className="p-3 border text-center">{st.grade}</td>
-                                            <td className="p-3 border text-center">
-                                                <button onClick={()=>setEditSchedule({id:st.id,schedule:schedules[st.id]||{}})} className="text-blue-600 hover:text-blue-800 mx-1" title="Edit Weekly Schedule">✏️</button>
-                                                <button onClick={()=>setEditExam({id:st.id,schedule:exams[st.id]||{}})} className="text-red-600 hover:text-red-800 mx-1" title="Edit Exam Schedule">📚</button>
-                                            </td>
-                                            {subs.map(sub => {
-                                                const has = st.subjects.includes(sub);
-                                                const chk = checked(st.id, sub);
-                                                return has ? (
-                                                    <td key={sub} className={`p-3 border cursor-pointer text-center ${chk?'bg-green-100':'hover:bg-blue-50'}`} onClick={()=>toggle(st.id,sub)}>
-                                                        {chk ? '✅' : '⬜'}
-                                                    </td>
-                                                ) : <td key={sub} className="p-3 border bg-gray-50 text-center">—</td>;
-                                            })}
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        </div>
+            <ul>
+                {schedule.map(s => <li key={s.id}>{s.day} — {s.subject}</li>)}
+            </ul>
+        </div>
+    );
+}
 
-                        {(!examMode || both) && (
-                            <div className="bg-blue-50 border-2 border-blue-300 rounded-lg p-6 mb-4">
-                                <h3 className="text-xl font-bold text-blue-900 mb-4">📅 Weekly Schedule</h3>
-                                {list.filter(s=>schedules[s.id]).length > 0 ? (
-                                    list.filter(s=>schedules[s.id]).map(st => (
-                                        <div key={st.id} className="bg-white rounded-lg shadow p-4 mb-4">
-                                            <h4 className="font-bold mb-3">{st.name}</h4>
-                                            <div className="grid grid-cols-6 gap-2">
-                                                {days.map((d,i) => (
-                                                    <div key={d} className="border rounded p-2 bg-blue-50">
-                                                        <h5 className="font-bold text-xs text-center mb-2">{d}</h5>
-                                                        {(schedules[st.id]?.[i]||[]).map(sub => (
-                                                            <div key={sub} className="bg-yellow-100 border border-yellow-300 rounded px-2 py-1 text-xs font-bold text-center mb-1">{sub}</div>
-                                                        ))}
-                                                        {!(schedules[st.id]?.[i]||[]).length && <div className="text-xs text-gray-400 text-center">Not set</div>}
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        </div>
-                                    ))
-                                ) : (
-                                    <div className="text-center py-8 text-gray-500">
-                                        <p className="mb-2">No weekly schedules set yet</p>
-                                        <p className="text-sm">Click ✏️ next to student name to create schedule</p>
-                                    </div>
-                                )}
-                            </div>
-                        )}
+/**************************************************
+ EXAM SCHEDULE PAGE
+**************************************************/
+function Exams() {
+    const [list, setList] = useState([]);
+    const [subject, setSubject] = useState("");
+    const [date, setDate] = useState("");
 
-                        {examMode && (
-                            <div className="bg-red-50 border-2 border-red-300 rounded-lg p-6">
-                                <h3 className="text-xl font-bold text-red-900 mb-4">📝 Exam Schedule</h3>
-                                {list.filter(s=>exams[s.id]).length > 0 ? (
-                                    list.filter(s=>exams[s.id]).map(st => (
-                                        <div key={st.id} className="bg-white rounded-lg shadow p-4 mb-4">
-                                            <h4 className="font-bold mb-3">{st.name}</h4>
-                                            <div className="grid grid-cols-6 gap-2">
-                                                {days.map((d,i) => (
-                                                    <div key={d} className="border-2 border-red-300 rounded p-2 bg-red-50">
-                                                        <h5 className="font-bold text-xs text-center mb-2 text-red-900">{d}</h5>
-                                                        {exams[st.id]?.[i] ? (
-                                                            <div className="bg-red-200 border-2 border-red-400 rounded px-2 py-2 text-xs font-bold text-center">{exams[st.id][i]}</div>
-                                                        ) : <div className="text-xs text-gray-400 text-center">Not set</div>}
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        </div>
-                                    ))
-                                ) : (
-                                    <div className="text-center py-8 text-gray-500">
-                                        <p className="mb-2">No exam schedules set yet</p>
-                                        <p className="text-sm">Click 📚 next to student name to create exam schedule</p>
-                                    </div>
-                                )}
-                            </div>
-                        )}
+    useEffect(() => {
+        return db.collection("exams").onSnapshot(snap => {
+            setList(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+        });
+    }, []);
 
-                        <div className="mt-6 bg-gradient-to-r from-blue-50 to-purple-50 rounded-lg p-6 border-2 border-blue-300">
-                            <h3 className="font-bold text-lg mb-3 text-blue-900">📖 How to Use:</h3>
-                            <div className="grid md:grid-cols-2 gap-4 text-sm">
-                                <div>
-                                    <h4 className="font-bold mb-2 text-blue-800">Daily Tracking:</h4>
-                                    <ul className="space-y-1">
-                                        <li>✅ Click checkbox to mark subject as taught</li>
-                                        <li>📅 Select date to track different days</li>
-                                        <li>⬜ Empty boxes = not taught yet</li>
-                                        <li>— Gray dash = student doesn't have that subject</li>
-                                    </ul>
-                                </div>
-                                <div>
-                                    <h4 className="font-bold mb-2 text-blue-800">Schedule Management:</h4>
-                                    <ul className="space-y-1">
-                                        <li>✏️ Click pencil to set weekly schedule (multiple subjects/day)</li>
-                                        <li>📚 Click book to set exam schedule (1 subject/day)</li>
-                                        <li>🎯 Enable "Exam Mode" to show exam timetable</li>
-                                        <li>👥 Check "Show Both" to display both schedules</li>
-                                    </ul>
-                                </div>
-                                <div>
-                                    <h4 className="font-bold mb-2 text-blue-800">Reports & Management:</h4>
-                                    <ul className="space-y-1">
-                                        <li>📊 Click "Report" to view weekly coverage statistics</li>
-                                        {user === 'jancy' && <li>⚙️ Click "Manage" to add/edit/remove students</li>}
-                                        <li>📈 Track which subjects are missing</li>
-                                        <li>🎯 See coverage percentages for each student</li>
-                                    </ul>
-                                </div>
-                                <div>
-                                    <h4 className="font-bold mb-2 text-blue-800">Access:</h4>
-                                    <ul className="space-y-1">
-                                        {user === 'jancy' && (
-                                            <>
-                                                <li>🔑 Jancy: J404 (Head Faculty - Full Access)</li>
-                                                <li>🔑 Arya: Y234</li>
-                                                <li>🔑 Jabeena: J123</li>
-                                            </>
-                                        )}
-                                        <li>💾 All data saved automatically to Firebase</li>
-                                        <li>🌐 Access from any device</li>
-                                    </ul>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            );
-        };
+    const add = async () => {
+        if (!subject || !date) return;
+        await db.collection("exams").add({ subject, date });
+    };
 
-        ReactDOM.render(<App />, document.getElementById('root'));
-    </script>
+    return (
+        <div>
+            <h2>Exam Schedule</h2>
+            <input placeholder="Subject" value={subject} onChange={e=>setSubject(e.target.value)} />
+            <input type="date" value={date} onChange={e=>setDate(e.target.value)} />
+            <button className="btn" onClick={add}>Add Exam</button>
+
+            <ul>
+                {list.map(e => <li key={e.id}>{e.subject} — {e.date}</li>)}
+            </ul>
+        </div>
+    );
+}
+
+/**************************************************
+ REPORTS
+**************************************************/
+function Reports() {
+    return <h2>Reports Coming Soon</h2>;
+}
+
+/**************************************************
+ RENDER APP
+**************************************************/
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+
+</script>
+
 </body>
-</html>    <div className="max-w-7xl mx-auto p-4">
-                            <div className="bg-white rounded-lg shadow p-6 mb-6">
-                                <h2 className="text-xl font-bold mb-4">{editingStudent ? 'Edit Student' : 'Add Student'}</h2>
-                                <div className="grid md:grid-cols-2 gap-4">
-                                    <input type="text" placeholder="Name" value={editingStudent ? editingStudent.name : newStudent.name}
-                                        onChange={e => editingStudent ? setEditingStudent({...editingStudent, name: e.target.value}) : setNewStudent({...newStudent, name: e.target.value})}
-                                        className="border rounded px-4 py-2" />
-                                    <input type="text" placeholder="Grade" value={editingStudent ? editingStudent.grade : newStudent.grade}
-                                        onChange={e => editingStudent ? setEditingStudent({...editingStudent, grade: e.target.value}) : setNewStudent({...newStudent, grade: e.target.value})}
-                                        className="border rounded px-4 py-2" />
-                                    <input type="text" placeholder="Time" value={editingStudent ? editingStudent.time : newStudent.time}
-                                        onChange={e => editingStudent ? setEditingStudent({...editingStudent, time: e.target.value}) : setNewStudent({...newStudent, time: e.target.value})}
-                                        className="border rounded px-4 py-2" />
-                                    <input type="text" placeholder="Subjects (comma separated)" 
-                                        value={editingStudent ? (Array.isArray(editingStudent.subjects) ? editingStudent.subjects.join(', ') : editingStudent.subjects) : newStudent.subjects}
-                                        onChange={e => editingStudent ? setEditingStudent({...editingStudent, subjects: e.target.value}) : setNewStudent({...newStudent, subjects: e.target.value})}
-                                        className="border rounded px-4 py-2" />
-                                    <select value={editingStudent ? editingStudent.faculty : newStudent.faculty}
-                                        onChange={e => editingStudent ? setEditingStudent({...editingStudent, faculty: e.target.value}) : setNewStudent({...newStudent, faculty: e.target.value})}
-                                        className="border rounded px-4 py-2">
-                                        <option value="jancy">Jancy</option>
-                                        <option value="arya">Arya</option>
-                                        <option value="jabeena">Jabeena</option>
-                                    </select>
-                                    {editingStudent ? (
-                                        <div className="flex gap-2">
-                                            <button onClick={updateStudent} className="flex-1 bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">Update</button>
-                                            <button onClick={() => setEditingStudent(null)} className="flex-1 bg-gray-400 text-white px-4 py-2 rounded hover:bg-gray-500">Cancel</button>
-                                        </div>
-                                    ) : (
-                                        <button onClick={addStudent} className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">Add Student</button>
-                                    )}
-                                </div>
-                            </div>
-
-                            {Object.keys(students).map(fac => (
-                                <div key={fac} className="bg-white rounded-lg shadow p-6 mb-4">
-                                    <h3 className="text-lg font-bold mb-4 capitalize">{fac} ({students[fac].length} students)</h3>
-                                    <div className="overflow-x-auto">
-                                        <table className="w-full text-sm">
-                                            <thead>
-                                                <tr className="bg-gray-100">
-                                                    <th className="p-2 border">Name</th>
-                                                    <th className="p-2 border">Grade</th>
-                                                    <th className="p-2 border">Time</th>
-                                                    <th className="p-2 border">Subjects</th>
-                                                    <th className="p-2 border">Actions</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody>
-                                                {students[fac].map(st => (
-                                                    <tr key={st.id} className="hover:bg-gray-50">
-                                                        <td className="p-2 border">{st.name}</td>
-                                                        <td className="p-2 border text-center">{st.grade}</td>
-                                                        <td className="p-2 border text-center">{st.time}</td>
-                                                        <td className="p-2 border text-xs">{st.subjects.join(', ')}</td>
-                                                        <td className="p-2 border text-center">
-                                                            <button onClick={() => setEditingStudent({...st, faculty: fac})} className="text-blue-600 hover:text-blue-800 mx-1">✏️</button>
-                                                            <button onClick={() => removeStudent(fac, st.id)} className="text-red-600 hover:text-red-800 mx-1">🗑️</button>
-                                                        </td>
-                                                    </tr>
-                                                ))}
-                                            </tbody>
-                                        </table>
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-                    </div>
-                );
-            }
-
-            // REPORT VIEW
-            if(showReport) {
-                const reportStudents = user === 'jancy' 
-                    ? [
-                        ...students.jancy.map(s => ({ ...s, faculty: 'Jancy' })),
-                        ...students.arya.map(s => ({ ...s, faculty: 'Arya' })),
-                        ...students.jabeena.map(s => ({ ...s, faculty: 'Jabeena' }))
-                    ]
-                    : students[user].map(s => ({ ...s, faculty: user }));
-
-                return (
-                    <div className="min-h-screen bg-gray-50">
-                        <div className={`bg-${c}-600 text-white p-4`}>
-                            <div className="max-w-7xl mx-auto flex justify-between">
-                                <h1 className="text-xl font-bold">Weekly Coverage Report</h1>
-                                <button onClick={() => setShowReport(false)} className="bg-white bg-opacity-20 px-4 py-2 rounded hover:bg-opacity-30">Back</button>
-                            </div>
-                        </div>
-
-                        <div className="max-w-7xl mx-auto p-4">
-                            <div className="bg-white rounded-lg shadow p-4 mb-4">
-                                <h3 className="font-bold mb-3">Report Period</h3>
-                                <div className="flex gap-4 flex-wrap">
-                                    <div>
-                                        <label className="block text-sm mb-1">Start Date</label>
-                                        <input type="date" value={reportStart} onChange={e => setReportStart(e.target.value)} className="border rounded px-4 py-2" />
-                                    </div>
-                                    <div>
-                                        <label className="block text-sm mb-1">End Date</label>
-                                        <input type="date" value={reportEnd} onChange={e => setReportEnd(e.target.value)} className="border rounded px-4 py-2" />
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div className="bg-white rounded-lg shadow p-6 overflow-x-auto">
-                                <table className="w-full text-sm">
-                                    <thead>
-                                        <tr className="bg-gray-100">
-                                            {user === 'jancy' && <th className="p-2 border">Faculty</th>}
-                                            <th className="p-2 border">Student</th>
-                                            <th className="p-2 border">Grade</th>
-                                            <th className="p-2 border">Total Subjects</th>
-                                            <th className="p-2 border">Covered</th>
-                                            <th className="p-2 border">Coverage %</th>
-                                            <th className="p-2 border">Missing Subjects</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {reportStudents.map(st => {
-                                            const coverage = calculateWeeklyCoverage(st);
-                                            return (
-                                                <tr key={`${st.faculty}-${st.id}`} className="hover:bg-gray-50">
-                                                    {user === 'jancy' && (
-                                                        <td className="p-2 border">
-                                                            <span className={`px-2 py-1 rounded text-xs ${
-                                                                st.faculty === 'Jancy' ? 'bg-blue-100 text-blue-800' :
-                                                                st.faculty === 'Arya' ? 'bg-green-100 text-green-800' : 
-                                                                'bg-gray-100 text-gray-800'
-                                                            }`}>
-                                                                {st.faculty}
-                                                            </span>
-                                                        </td>
-                                                    )}
-                                                    <td className="p-2 border font-semibold">{st.name}</td>
-                                                    <td className="p-2 border text-center">{st.grade}</td>
-                                                    <td className="p-2 border text-center">{coverage.total}</td>
-                                                    <td className="p-2 border text-center">{coverage.covered}</td>
-                                                    <td className="p-2 border text-center">
-                                                        <span className={`px-3 py-1 rounded-full font-bold ${
-                                                            coverage.percentage === 100 ? 'bg-green-100 text-green-800' :
-                                                            coverage.percentage >= 70 ? 'bg-yellow-100 text-yellow-800' :
-                                                            coverage.percentage >= 50 ? 'bg-orange-100 text-orange-800' :
-                                                            'bg-red-100 text-red-800'
-                                                        }`}>
-                                                            {coverage.percentage}%
-                                                        </span>
-                                                    </td>
-                                                    <td className="p-2 border text-xs">
-                                                        {coverage.missing.length > 0 ? (
-                                                            <span className="text-red-600">{coverage.missing.join(', ')}</span>
-                                                        ) : (
-                                                            <span className="text-green-600 font-bold">✓ Complete</span>
-                                                        )}
-                                                    </td>
-                                                </tr>
-                                            );
-                                        })}
-                                    </tbody>
-                                </table>
-                            </div>
-
-                            <div className="mt-4 bg-blue-50 border border-blue-300 rounded-lg p-4">
-                                <h4 className="font-bold mb-2">📊 Coverage Legend:</h4>
-                                <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-sm">
-                                    <div className="flex items-center gap-2">
-                                        <span className="px-3 py-1 rounded-full bg-green-100 text-green-800 font-bold">100%</span>
-                                        <span>Complete</span>
-                                    </div>
-                                    <div className="flex items-center gap-2">
-                                        <span className="px-3 py-1 rounded-full bg-yellow-100 text-yellow-800 font-bold">70-99%</span>
-                                        <span>Good</span>
-                                    </div>
-                                    <div className="flex items-center gap-2">
-                                        <span className="px-3 py-1 rounded-full bg-orange-100 text-orange-800 font-bold">50-69%</span>
-                                        <span>Fair</span>
-                                    </div>
-                                    <div className="flex items-center gap-2">
-                                        <span className="px-3 py-1 rounded-full bg-red-100 text-red-800 font-bold">&lt;50%</span>
-                                        <span>Needs Attention</span>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                );
-            }
-
-            if(editSchedule) {
-                const st = list.find(s=>s.id===editSchedule.id);
-                return (
-                    <div className="min-h-screen bg-gray-50 p-4">
-                        <div className="max-w-6xl mx-auto bg-white rounded-lg shadow-lg p-6">
-                            <h2 className="text-2xl font-bold mb-4">Edit Schedule: {st?.name}</h2>
-                            <div className="grid md:grid-cols-3 gap-4">
-                                {days.map((day,i) => (
-                                    <div key={day} className="border rounded-lg p-4">
-                                        <h3 className="font-bold mb-2">{day}</h3>
-                                        {st?.subjects.map(sub => (
-                                            <label key={sub} className="flex items-center gap-2 p-2 hover:bg-gray-50 rounded cursor-pointer">
-                                                <input type="checkbox" checked={(editSchedule.schedule?.[i]||[]).includes(sub)} 
-                                                    onChange={e=>{
-                                                        const s = editSchedule.schedule || {};
-                                                        const d = s[i] || [];
-                                                        s[i] = e.target.checked ? [...d,sub] : d.filter(x=>x!==sub);
-                                                        setEditSchedule({...editSchedule, schedule:s});
-                                                    }} className="w-4 h-4" />
-                                                <span className="text-sm">{sub}</span>
-                                            </label>
-                                        ))}
-                                    </div>
-                                ))}
-                            </div>
-                            <div className="flex gap-3 mt-6">
-                                <button onClick={saveSchedule} className="flex-1 bg-blue-600 text-white py-3 rounded-lg font-bold hover:bg-blue-700">Save</button>
-                                <button onClick={()=>setEditSchedule(null)} className="flex-1 bg-gray-300 text-gray-700 py-3 rounded-lg font-bold hover:bg-gray-400">Cancel</button>
-                            </div>
-                        </div>
-                    </div>
-                );
-            }
-
-           if(editExam) {
-                const st = list.find(s=>s.id===editExam.id);
-                return (
-                    <div className="min-h-screen bg-gray-50 p-4">
-                        <div className="max-w-6xl mx-auto bg-white rounded-lg shadow-lg p-6">
-                            <h2 className="text-2xl font-bold mb-4 text-red-700">Exam Schedule: {st?.name}</h2>
-                            <p className="text-sm text-gray-600 mb-4">Select ONE subject per day</p>
-                            <div className="grid md:grid-cols-3 gap-4">
-                                {days.map((day,i) => (
-                                    <div key={day} className="border-2 border-red-200 rounded-lg p-4 bg-red-50">
-                                        <h3 className="font-bold mb-2 text-red-900">{day}</h3>
-                                        {st?.subjects.map(sub => (
-                                            <label key={sub} className="flex items-center gap-2 p-2 hover:bg-red-100 rounded cursor-pointer">
-                                                <input type="radio" name={`exam-${i}`} checked={(editExam.schedule?.[i])===sub}
-                                                    onChange={()=>{
-                                                        const s = editExam.schedule || {};
-                                                        s[i] = sub;
-                                                        setEditExam({...editExam, schedule:s});
-                                                    }} className="w-4 h-4" />
-                                                <span className="text-sm font-bold">{sub}</span>
-                                            </label>
-                                        ))}
-                                    </div>
-                                ))}
-                            </div>
-                            <div className="flex gap-3 mt-6">
-                                <button onClick={saveExam} className="flex-1 bg-red-600 text-white py-3 rounded-lg font-bold hover:bg-red-700">Save</button>
-                                <button onClick={()=>setEditExam(null)} className="flex-1 bg-gray-300 text-gray-700 py-3 rounded-lg font-bold hover:bg-gray-400">Cancel</button>
-                            </div>
-                        </div>
-                    </div>
-                );
-            }
-
-            return (
-                <div className="min-h-screen bg-gray-50">
-                    <div className={`bg-${c}-600 text-white p-4`}>
-                        <div className="max-w-7xl mx-auto flex justify-between items-center">
-                            <div>
-                                <h1 className="text-xl font-bold capitalize">{user} Dashboard</h1>
-                                <p className="text-sm opacity-90">{list.length} Students</p>
-                            </div>
-                            <button onClick={()=>{setUser(null);setFaculty(null);}} className="bg-white bg-opacity-20 px-4 py-2 rounded hover:bg-opacity-30">Logout</button>
-                        </div>
-                    </div>
-
-                    <div className="bg-white border-b p-4">
-                        <div className="max-w-7xl mx-auto flex gap-3 items-center flex-wrap">
-                            <input type="date" value={date} onChange={e=>setDate(e.target.value)} className="border rounded px-4 py-2" />
-                            <label className="flex items-center gap-2 bg-red-50 px-4 py-2 rounded border-2 border-red-300 cursor-pointer ml-auto">
-                                <input type="checkbox" checked={examMode} onChange={e=>{setExamMode(e.target.checked);if(!e.target.checked)setBoth(false);}} className="w-4 h-4" />
-                                <span className="font-bold text-red-900">Exam Mode</span>
-                            </label>
-                            {examMode && (
-                                <label className="flex items-center gap-2 bg-purple-50 px-4 py-2 rounded border-2 border-purple-300 cursor-pointer">
-                                    <input type="checkbox" checked={both} onChange={e=>setBoth(e.target.checked)} className="w-4 h-4" />
-                                    <span className="font-bold text-purple-900">Show Both</span>
-                                </label>
-                            )}
-                        </div>
-                    </div>
-
-                    <div className="max-w-full mx-auto p-4">
-                        <div className="bg-white rounded-lg shadow mb-6 overflow-x-auto">
-                            <table className="w-full text-sm">
-                                <thead>
-                                    <tr className={`bg-${c}-100`}>
-                                        <th className="p-3 border">Student</th>
-                                        <th className="p-3 border">Grade</th>
-                                        <th className="p-3 border">Actions</th>
-                                        {subs.map(s => <th key={s} className="p-3 border">{s}</th>)}
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {list.map(st => (
-                                        <tr key={st.id} className="hover:bg-gray-50">
-                                            <td className="p-3 border font-bold">{st.name}</td>
-                                            <td className="p-3 border text-center">{st.grade}</td>
-                                            <td className="p-3 border text-center">
-                                                <button onClick={()=>setEditSchedule({id:st.id,schedule:schedules[st.id]||{}})} className="text-blue-600 hover:text-blue-800 mx-1">✏️</button>
-                                                <button onClick={()=>setEditExam({id:st.id,schedule:exams[st.id]||{}})} className="text-red-600 hover:text-red-800 mx-1">📚</button>
-                                            </td>
-                                            {subs.map(sub => {
-                                                const has = st.subjects.includes(sub);
-                                                const chk = checked(st.id, sub);
-                                                return has ? (
-                                                    <td key={sub} className={`p-3 border cursor-pointer text-center ${chk?'bg-green-100':'hover:bg-blue-50'}`} onClick={()=>toggle(st.id,sub)}>
-                                                        {chk ? '✅' : '⬜'}
-                                                    </td>
-                                                ) : <td key={sub} className="p-3 border bg-gray-50 text-center">—</td>;
-                                            })}
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        </div>
-
-                        {(!examMode || both) && (
-                            <div className="bg-blue-50 border-2 border-blue-300 rounded-lg p-6 mb-4">
-                                <h3 className="text-xl font-bold text-blue-900 mb-4">📅 Weekly Schedule</h3>
-                                {list.filter(s=>schedules[s.id]).map(st => (
-                                    <div key={st.id} className="bg-white rounded-lg shadow p-4 mb-4">
-                                        <h4 className="font-bold mb-3">{st.name}</h4>
-                                        <div className="grid grid-cols-6 gap-2">
-                                            {days.map((d,i) => (
-                                                <div key={d} className="border rounded p-2 bg-blue-50">
-                                                    <h5 className="font-bold text-xs text-center mb-2">{d}</h5>
-                                                    {(schedules[st.id]?.[i]||[]).map(sub => (
-                                                        <div key={sub} className="bg-yellow-100 border border-yellow-300 rounded px-2 py-1 text-xs font-bold text-center mb-1">{sub}</div>
-                                                    ))}
-                                                </div>
-                                            ))}
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-                        )}
-
-                        {examMode && (
-                            <div className="bg-red-50 border-2 border-red-300 rounded-lg p-6">
-                                <h3 className="text-xl font-bold text-red-900 mb-4">📝 Exam Schedule</h3>
-                                {list.filter(s=>exams[s.id]).map(st => (
-                                    <div key={st.id} className="bg-white rounded-lg shadow p-4 mb-4">
-                                        <h4 className="font-bold mb-3">{st.name}</h4>
-                                        <div className="grid grid-cols-6 gap-2">
-                                            {days.map((d,i) => (
-                                                <div key={d} className="border-2 border-red-300 rounded p-2 bg-red-50">
-                                                    <h5 className="font-bold text-xs text-center mb-2 text-red-900">{d}</h5>
-                                                    {exams[st.id]?.[i] ? (
-                                                        <div className="bg-red-200 border-2 border-red-400 rounded px-2 py-2 text-xs font-bold text-center">{exams[st.id][i]}</div>
-                                                    ) : <div className="text-xs text-gray-400 text-center">Not set</div>}
-                                                </div>
-                                            ))}
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-                        )}
-
-                        <div className="mt-6 bg-blue-50 rounded-lg p-4">
-                            <h3 className="font-bold mb-2">📖 Instructions:</h3>
-                            <ul className="text-sm space-y-1">
-                                <li>✅ Click checkbox to mark attendance</li>
-                                <li>✏️ Click pencil to edit weekly schedule</li>
-                                <li>📚 Click book to edit exam schedule (1 subject/day)</li>
-                                <li>🎯 Enable "Exam Mode" to show exam timetable</li>
-                                <li>👥 Check "Show Both" to display both schedules</li>
-                                {user === 'jancy' && <li>🔑 Passwords - Jancy: J404, Arya: Y234, Jabeena: J123</li>}
-                            </ul>
-                        </div>
-                    </div>
-                </div>
-            );
-        };
-
-        ReactDOM.render(<App />, document.getElementById('root'));
-    </script>
-</body>
-
 </html>
