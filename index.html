@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Tuition Centre Tracker - Firebase</title>
+    <title>Tuition Centre Tracker</title>
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -50,8 +50,6 @@
             const [editSchedule, setEditSchedule] = useState(null);
             const [editExam, setEditExam] = useState(null);
             const [editSchoolTimetable, setEditSchoolTimetable] = useState(null);
-            const [examMode, setExamMode] = useState(false);
-            const [both, setBoth] = useState(false);
             const [showManagement, setShowManagement] = useState(false);
             const [showReport, setShowReport] = useState(false);
             const [showTimetables, setShowTimetables] = useState(false);
@@ -63,6 +61,8 @@
                 return d.toISOString().split('T')[0];
             });
             const [reportEnd, setReportEnd] = useState(new Date().toISOString().split('T')[0]);
+            const [sortBy, setSortBy] = useState('grade');
+            const [sortOrder, setSortOrder] = useState('asc');
 
             useEffect(() => {
                 if (!database) return;
@@ -78,12 +78,95 @@
                 else { alert('Wrong password!'); setPwd(''); }
             };
 
-            const grade = (g) => (g === 'LKG' || g === 'UKG') ? 0 : parseInt(g) || 0;
-            const studs = () => !user ? [] : [...(students[user] || [])].sort((a,b) => grade(a.grade) - grade(b.grade));
+            const grade = (g) => {
+                if (!g) return 0;
+                if (g === 'LKG') return -2;
+                if (g === 'UKG') return -1;
+                return parseInt(g) || 0;
+            };
+
+            const studs = () => {
+                if (!user) return [];
+                let list = [...(students[user] || [])];
+                
+                if (user === 'jancy') {
+                    const abacusStudents = list.filter(s => 
+                        s.subjects.length === 1 && s.subjects[0] === 'ABACUS ONLY'
+                    );
+                    const regularStudents = list.filter(s => 
+                        !(s.subjects.length === 1 && s.subjects[0] === 'ABACUS ONLY')
+                    );
+                    
+                    if (sortBy === 'grade') {
+                        regularStudents.sort((a, b) => {
+                            const diff = grade(a.grade) - grade(b.grade);
+                            return sortOrder === 'asc' ? diff : -diff;
+                        });
+                    } else if (sortBy === 'name') {
+                        regularStudents.sort((a, b) => {
+                            const nameA = (a.name || '').toUpperCase();
+                            const nameB = (b.name || '').toUpperCase();
+                            const diff = nameA.localeCompare(nameB);
+                            return sortOrder === 'asc' ? diff : -diff;
+                        });
+                    }
+                    
+                    abacusStudents.sort((a, b) => grade(a.grade) - grade(b.grade));
+                    return [...regularStudents, ...abacusStudents];
+                } else {
+                    if (sortBy === 'grade') {
+                        list.sort((a, b) => {
+                            const diff = grade(a.grade) - grade(b.grade);
+                            return sortOrder === 'asc' ? diff : -diff;
+                        });
+                    } else if (sortBy === 'name') {
+                        list.sort((a, b) => {
+                            const nameA = (a.name || '').toUpperCase();
+                            const nameB = (b.name || '').toUpperCase();
+                            const diff = nameA.localeCompare(nameB);
+                            return sortOrder === 'asc' ? diff : -diff;
+                        });
+                    }
+                    return list;
+                }
+            };
+
+            const toggleSort = (column) => {
+                if (sortBy === column) {
+                    setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+                } else {
+                    setSortBy(column);
+                    setSortOrder('asc');
+                }
+            };
+
             const toggle = (sid, sub) => {
                 const k = `${date}-${sid}-${sub}`;
                 if(database) database.ref(`weeklyData/${k}`).set(!data[k]);
             };
+
+            const toggleAllSubject = (subject) => {
+                const list = studs();
+                const updates = {};
+                let hasUnchecked = false;
+                
+                list.forEach(st => {
+                    if (st.subjects.includes(subject)) {
+                        const k = `${date}-${st.id}-${subject}`;
+                        if (!data[k]) hasUnchecked = true;
+                    }
+                });
+                
+                list.forEach(st => {
+                    if (st.subjects.includes(subject)) {
+                        const k = `${date}-${st.id}-${subject}`;
+                        updates[k] = hasUnchecked;
+                    }
+                });
+                
+                if(database) database.ref('weeklyData').update(updates);
+            };
+
             const checked = (sid, sub) => data[`${date}-${sid}-${sub}`] || false;
 
             const saveSchedule = () => {
@@ -94,10 +177,10 @@
             };
 
             const saveExam = () => {
-                if(!editExam?.schedule) return alert('Set exam schedule');
-                if(database) database.ref(`examSchedules/${editExam.id}`).set(editExam.schedule);
+                if(!editExam?.exams) return alert('Set exam dates');
+                if(database) database.ref(`examSchedules/${editExam.id}`).set(editExam.exams);
                 setEditExam(null);
-                alert('Saved!');
+                alert('Exam schedule saved!');
             };
 
             const saveSchoolTimetable = () => {
@@ -105,6 +188,40 @@
                 if(database) database.ref(`schoolTimetables/${editSchoolTimetable.id}`).set(editSchoolTimetable.timetable);
                 setEditSchoolTimetable(null);
                 alert('School timetable saved!');
+            };
+
+            const isExamPeriod = (studentId, today) => {
+                const examSchedule = exams[studentId];
+                if (!examSchedule) return false;
+                
+                const todayDate = new Date(today);
+                todayDate.setHours(0, 0, 0, 0);
+                
+                for (let subject in examSchedule) {
+                    const examDate = new Date(examSchedule[subject]);
+                    examDate.setHours(0, 0, 0, 0);
+                    if (examDate.getTime() === todayDate.getTime()) {
+                        return true;
+                    }
+                }
+                return false;
+            };
+
+            const getTodayExamSubject = (studentId, today) => {
+                const examSchedule = exams[studentId];
+                if (!examSchedule) return null;
+                
+                const todayDate = new Date(today);
+                todayDate.setHours(0, 0, 0, 0);
+                
+                for (let subject in examSchedule) {
+                    const examDate = new Date(examSchedule[subject]);
+                    examDate.setHours(0, 0, 0, 0);
+                    if (examDate.getTime() === todayDate.getTime()) {
+                        return subject;
+                    }
+                }
+                return null;
             };
 
             const addStudent = () => {
@@ -219,33 +336,37 @@
             const subs = [...new Set(list.flatMap(s=>s.subjects))].sort();
             const c = colors[user];
 
-            // SCHOOL TIMETABLE EDITOR
+            // SCHOOL TIMETABLE EDITOR - NEW FORMAT
             if(editSchoolTimetable) {
                 const st = list.find(s=>s.id===editSchoolTimetable.id);
-                const periods = ['Period 1', 'Period 2', 'Period 3', 'Period 4', 'Period 5', 'Period 6', 'Period 7', 'Period 8'];
                 
                 return (
                     <div className="min-h-screen bg-gray-50 p-4">
                         <div className="max-w-7xl mx-auto bg-white rounded-lg shadow-lg p-6">
                             <h2 className="text-2xl font-bold mb-2">School Timetable: {st?.name}</h2>
-                            <p className="text-sm text-gray-600 mb-4">Enter what subjects the student has in school for each period. Use "BREAK" or "LUNCH" for breaks.</p>
+                            <p className="text-sm text-gray-600 mb-4">Enter school timetable - Days in rows, subjects in columns (up to 8 periods). Use "BREAK" or "LUNCH" for breaks.</p>
                             
                             <div className="overflow-x-auto">
                                 <table className="w-full text-sm border-collapse">
                                     <thead>
                                         <tr className="bg-blue-100">
-                                            <th className="border-2 border-gray-400 p-2 font-bold">Period</th>
-                                            {days.map(day => (
-                                                <th key={day} className="border-2 border-gray-400 p-2 font-bold">{day}</th>
-                                            ))}
+                                            <th className="border-2 border-gray-400 p-2 font-bold">Day</th>
+                                            <th className="border-2 border-gray-400 p-2 font-bold">Period 1</th>
+                                            <th className="border-2 border-gray-400 p-2 font-bold">Period 2</th>
+                                            <th className="border-2 border-gray-400 p-2 font-bold">Period 3</th>
+                                            <th className="border-2 border-gray-400 p-2 font-bold">Period 4</th>
+                                            <th className="border-2 border-gray-400 p-2 font-bold">Period 5</th>
+                                            <th className="border-2 border-gray-400 p-2 font-bold">Period 6</th>
+                                            <th className="border-2 border-gray-400 p-2 font-bold">Period 7</th>
+                                            <th className="border-2 border-gray-400 p-2 font-bold">Period 8</th>
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        {periods.map((period, periodIdx) => (
-                                            <tr key={period}>
-                                                <td className="border-2 border-gray-400 p-2 font-bold bg-gray-100">{period}</td>
-                                                {days.map((day, dayIdx) => (
-                                                    <td key={day} className="border-2 border-gray-400 p-1">
+                                        {days.map((day, dayIdx) => (
+                                            <tr key={day}>
+                                                <td className="border-2 border-gray-400 p-2 font-bold bg-gray-100">{day}</td>
+                                                {[0,1,2,3,4,5,6,7].map(periodIdx => (
+                                                    <td key={periodIdx} className="border-2 border-gray-400 p-1">
                                                         <input
                                                             type="text"
                                                             placeholder="Subject"
@@ -275,21 +396,59 @@
                 );
             }
 
+            // EXAM SCHEDULE EDITOR - DATE BASED
+            if(editExam) {
+                const st = list.find(s=>s.id===editExam.id);
+                return (
+                    <div className="min-h-screen bg-gray-50 p-4">
+                        <div className="max-w-6xl mx-auto bg-white rounded-lg shadow-lg p-6">
+                            <h2 className="text-2xl font-bold mb-4 text-red-700">Exam Schedule: {st?.name}</h2>
+                            <p className="text-sm text-gray-600 mb-4">Set exam date for each subject. Exams can span 2-3 weeks.</p>
+                            
+                            <div className="grid md:grid-cols-2 gap-4">
+                                {st?.subjects.map(sub => (
+                                    <div key={sub} className="border-2 border-red-200 rounded-lg p-4 bg-red-50">
+                                        <label className="block">
+                                            <span className="font-bold text-red-900">{sub}</span>
+                                            <input
+                                                type="date"
+                                                value={editExam.exams?.[sub] || ''}
+                                                onChange={e => {
+                                                    const exs = editExam.exams || {};
+                                                    exs[sub] = e.target.value;
+                                                    setEditExam({...editExam, exams: exs});
+                                                }}
+                                                className="w-full mt-2 px-3 py-2 border-2 border-red-300 rounded"
+                                            />
+                                        </label>
+                                    </div>
+                                ))}
+                            </div>
+                            
+                            <div className="flex gap-3 mt-6">
+                                <button onClick={saveExam} className="flex-1 bg-red-600 text-white py-3 rounded-lg font-bold hover:bg-red-700">Save Exam Dates</button>
+                                <button onClick={()=>setEditExam(null)} className="flex-1 bg-gray-300 text-gray-700 py-3 rounded-lg font-bold hover:bg-gray-400">Cancel</button>
+                            </div>
+                        </div>
+                    </div>
+                );
+            }
+
             // TIMETABLES VIEW
             if(showTimetables) {
                 return (
                     <div className="min-h-screen bg-gray-50">
                         <div style={{backgroundColor: c === 'blue' ? '#2563eb' : c === 'green' ? '#16a34a' : '#4b5563'}} className="text-white p-4">
                             <div className="max-w-7xl mx-auto flex justify-between">
-                                <h1 className="text-xl font-bold">School Timetables</h1>
+                                <h1 className="text-xl font-bold">School Timetables & Exams</h1>
                                 <button onClick={() => setShowTimetables(false)} className="bg-white bg-opacity-20 px-4 py-2 rounded hover:bg-opacity-30">Back</button>
                             </div>
                         </div>
 
                         <div className="max-w-7xl mx-auto p-4">
-                            {list.map(st => {
+                            {list.filter(s => !(s.subjects.length === 1 && s.subjects[0] === 'ABACUS ONLY')).map(st => {
                                 const tt = schoolTimetables[st.id];
-                                const periods = ['Period 1', 'Period 2', 'Period 3', 'Period 4', 'Period 5', 'Period 6', 'Period 7', 'Period 8'];
+                                const examSch = exams[st.id];
                                 
                                 return (
                                     <div key={st.id} className="bg-white rounded-lg shadow-lg p-6 mb-6">
@@ -298,52 +457,85 @@
                                                 <h3 className="text-xl font-bold">{st.name}</h3>
                                                 <p className="text-sm text-gray-600">Grade {st.grade} • {st.time}</p>
                                             </div>
-                                            <button 
-                                                onClick={() => setEditSchoolTimetable({id: st.id, timetable: tt || {}})}
-                                                className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">
-                                                {tt ? '✏️ Edit' : '➕ Add'} Timetable
-                                            </button>
+                                            <div className="flex gap-2">
+                                                <button 
+                                                    onClick={() => setEditSchoolTimetable({id: st.id, timetable: tt || {}})}
+                                                    className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">
+                                                    {tt ? '✏️ Edit' : '➕ Add'} Timetable
+                                                </button>
+                                                <button 
+                                                    onClick={() => setEditExam({id: st.id, exams: examSch || {}})}
+                                                    className="bg-red-600 text-white px-4 py-2 rounded hover:bg-red-700">
+                                                    {examSch ? '✏️ Edit' : '➕ Add'} Exams
+                                                </button>
+                                            </div>
                                         </div>
 
-                                        {tt ? (
-                                            <div className="overflow-x-auto">
-                                                <table className="w-full text-xs border-collapse">
-                                                    <thead>
-                                                        <tr className="bg-blue-100">
-                                                            <th className="border-2 border-gray-400 p-2 font-bold">Period</th>
-                                                            {days.map(day => (
-                                                                <th key={day} className="border-2 border-gray-400 p-2 font-bold">{day}</th>
-                                                            ))}
-                                                        </tr>
-                                                    </thead>
-                                                    <tbody>
-                                                        {periods.map((period, periodIdx) => (
-                                                            <tr key={period}>
-                                                                <td className="border-2 border-gray-400 p-2 font-bold bg-gray-100 text-center">{period}</td>
-                                                                {days.map((day, dayIdx) => {
-                                                                    const subject = tt[dayIdx]?.[periodIdx] || '';
-                                                                    const isBreak = subject.toUpperCase().includes('BREAK') || subject.toUpperCase().includes('LUNCH');
-                                                                    return (
-                                                                        <td 
-                                                                            key={day} 
-                                                                            className="border-2 border-gray-400 p-2 text-center font-semibold"
-                                                                            style={{
-                                                                                backgroundColor: isBreak ? '#fef3c7' : subject ? '#dcfce7' : '#fff',
-                                                                                color: isBreak ? '#92400e' : '#000'
-                                                                            }}>
-                                                                            {subject || '-'}
-                                                                        </td>
-                                                                    );
-                                                                })}
+                                        {/* School Timetable */}
+                                        {tt && (
+                                            <div className="mb-6">
+                                                <h4 className="font-bold mb-2 text-blue-900">📚 School Timetable</h4>
+                                                <div className="overflow-x-auto">
+                                                    <table className="w-full text-xs border-collapse">
+                                                        <thead>
+                                                            <tr className="bg-blue-100">
+                                                                <th className="border-2 border-gray-400 p-2 font-bold">Day</th>
+                                                                <th className="border-2 border-gray-400 p-2 font-bold">P1</th>
+                                                                <th className="border-2 border-gray-400 p-2 font-bold">P2</th>
+                                                                <th className="border-2 border-gray-400 p-2 font-bold">P3</th>
+                                                                <th className="border-2 border-gray-400 p-2 font-bold">P4</th>
+                                                                <th className="border-2 border-gray-400 p-2 font-bold">P5</th>
+                                                                <th className="border-2 border-gray-400 p-2 font-bold">P6</th>
+                                                                <th className="border-2 border-gray-400 p-2 font-bold">P7</th>
+                                                                <th className="border-2 border-gray-400 p-2 font-bold">P8</th>
                                                             </tr>
-                                                        ))}
-                                                    </tbody>
-                                                </table>
+                                                        </thead>
+                                                        <tbody>
+                                                            {days.map((day, dayIdx) => (
+                                                                <tr key={day}>
+                                                                    <td className="border-2 border-gray-400 p-2 font-bold bg-gray-100">{day}</td>
+                                                                    {[0,1,2,3,4,5,6,7].map(periodIdx => {
+                                                                        const subject = tt[dayIdx]?.[periodIdx] || '';
+                                                                        const isBreak = subject.toUpperCase().includes('BREAK') || subject.toUpperCase().includes('LUNCH');
+                                                                        return (
+                                                                            <td 
+                                                                                key={periodIdx} 
+                                                                                className="border-2 border-gray-400 p-2 text-center font-semibold"
+                                                                                style={{
+                                                                                    backgroundColor: isBreak ? '#fef3c7' : subject ? '#dcfce7' : '#fff',
+                                                                                    color: isBreak ? '#92400e' : '#000'
+                                                                                }}>
+                                                                                {subject || '-'}
+                                                                            </td>
+                                                                        );
+                                                                    })}
+                                                                </tr>
+                                                            ))}
+                                                        </tbody>
+                                                    </table>
+                                                </div>
                                             </div>
-                                        ) : (
+                                        )}
+
+                                        {/* Exam Schedule */}
+                                        {examSch && Object.keys(examSch).length > 0 && (
+                                            <div>
+                                                <h4 className="font-bold mb-2 text-red-900">📝 Exam Schedule</h4>
+                                                <div className="grid md:grid-cols-3 gap-2">
+                                                    {Object.keys(examSch).sort((a,b) => new Date(examSch[a]) - new Date(examSch[b])).map(subject => (
+                                                        <div key={subject} className="bg-red-50 border-2 border-red-300 rounded p-3">
+                                                            <div className="font-bold text-red-900">{subject}</div>
+                                                            <div className="text-sm">{new Date(examSch[subject]).toLocaleDateString('en-GB')}</div>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {!tt && !examSch && (
                                             <div className="text-center py-8 text-gray-500 border-2 border-dashed rounded">
-                                                <p>No school timetable set</p>
-                                                <p className="text-sm">Click "Add Timetable" to create one</p>
+                                                <p>No timetables or exams set</p>
+                                                <p className="text-sm">Click buttons above to add</p>
                                             </div>
                                         )}
                                     </div>
@@ -354,11 +546,12 @@
                 );
             }
 
-            // MANAGEMENT VIEW
+            // Continue with other views (Management, Report, etc.) in next part...
+            
             if(showManagement && user === 'jancy') {
                 return (
                     <div className="min-h-screen bg-gray-50">
-                        <div style={{backgroundColor: c === 'blue' ? '#2563eb' : c === 'green' ? '#16a34a' : '#4b5563'}} className="text-white p-4">
+                        <div style={{backgroundColor: '#2563eb'}} className="text-white p-4">
                             <div className="max-w-7xl mx-auto flex justify-between">
                                 <h1 className="text-xl font-bold">Student Management</h1>
                                 <button onClick={() => setShowManagement(false)} className="bg-white bg-opacity-20 px-4 py-2 rounded hover:bg-opacity-30">Back</button>
@@ -437,7 +630,6 @@
                 );
             }
 
-            // REPORT VIEW
             if(showReport) {
                 const reportStudents = user === 'jancy' 
                     ? [
@@ -564,40 +756,6 @@
                 );
             }
 
-            if(editExam) {
-                const st = list.find(s=>s.id===editExam.id);
-                return (
-                    <div className="min-h-screen bg-gray-50 p-4">
-                        <div className="max-w-6xl mx-auto bg-white rounded-lg shadow-lg p-6">
-                            <h2 className="text-2xl font-bold mb-4 text-red-700">Exam Schedule: {st?.name}</h2>
-                            <p className="text-sm text-gray-600 mb-4">Select ONE subject per day for exam preparation</p>
-                            <div className="grid md:grid-cols-3 gap-4">
-                                {days.map((day,i) => (
-                                    <div key={day} className="border-2 border-red-200 rounded-lg p-4 bg-red-50">
-                                        <h3 className="font-bold mb-2 text-red-900">{day}</h3>
-                                        {st?.subjects.map(sub => (
-                                            <label key={sub} className="flex items-center gap-2 p-2 hover:bg-red-100 rounded cursor-pointer">
-                                                <input type="radio" name={`exam-${i}`} checked={(editExam.schedule?.[i])===sub}
-                                                    onChange={()=>{
-                                                        const s = editExam.schedule || {};
-                                                        s[i] = sub;
-                                                        setEditExam({...editExam, schedule:s});
-                                                    }} className="w-4 h-4" />
-                                                <span className="text-sm font-bold">{sub}</span>
-                                            </label>
-                                        ))}
-                                    </div>
-                                ))}
-                            </div>
-                            <div className="flex gap-3 mt-6">
-                                <button onClick={saveExam} className="flex-1 bg-red-600 text-white py-3 rounded-lg font-bold hover:bg-red-700">Save</button>
-                                <button onClick={()=>setEditExam(null)} className="flex-1 bg-gray-300 text-gray-700 py-3 rounded-lg font-bold hover:bg-gray-400">Cancel</button>
-                            </div>
-                        </div>
-                    </div>
-                );
-            }
-
             return (
                 <div className="min-h-screen bg-gray-50">
                     <div style={{backgroundColor: c === 'blue' ? '#2563eb' : c === 'green' ? '#16a34a' : '#4b5563'}} className="text-white p-4">
@@ -607,7 +765,7 @@
                                 <p className="text-sm opacity-90">{list.length} Students</p>
                             </div>
                             <div className="flex gap-2 flex-wrap">
-                                <button onClick={() => setShowTimetables(true)} className="bg-white bg-opacity-20 px-4 py-2 rounded hover:bg-opacity-30">🏫 School Timetables</button>
+                                <button onClick={() => setShowTimetables(true)} className="bg-white bg-opacity-20 px-4 py-2 rounded hover:bg-opacity-30">🏫 Timetables</button>
                                 <button onClick={() => setShowReport(true)} className="bg-white bg-opacity-20 px-4 py-2 rounded hover:bg-opacity-30">📊 Report</button>
                                 {user === 'jancy' && (
                                     <button onClick={() => setShowManagement(true)} className="bg-white bg-opacity-20 px-4 py-2 rounded hover:bg-opacity-30">⚙️ Manage</button>
@@ -620,15 +778,10 @@
                     <div className="bg-white border-b p-4">
                         <div className="max-w-7xl mx-auto flex gap-3 items-center flex-wrap">
                             <input type="date" value={date} onChange={e=>setDate(e.target.value)} className="border rounded px-4 py-2" />
-                            <label className="flex items-center gap-2 bg-red-50 px-4 py-2 rounded border-2 border-red-300 cursor-pointer ml-auto">
-                                <input type="checkbox" checked={examMode} onChange={e=>{setExamMode(e.target.checked);if(!e.target.checked)setBoth(false);}} className="w-4 h-4" />
-                                <span className="font-bold text-red-900">Exam Mode</span>
-                            </label>
-                            {examMode && (
-                                <label className="flex items-center gap-2 bg-purple-50 px-4 py-2 rounded border-2 border-purple-300 cursor-pointer">
-                                    <input type="checkbox" checked={both} onChange={e=>setBoth(e.target.checked)} className="w-4 h-4" />
-                                    <span className="font-bold text-purple-900">Show Both</span>
-                                </label>
+                            {list.some(st => isExamPeriod(st.id, date)) && (
+                                <div className="ml-auto bg-red-100 border-2 border-red-400 px-4 py-2 rounded font-bold text-red-900">
+                                    🎯 EXAM DAY
+                                </div>
                             )}
                         </div>
                     </div>
@@ -638,92 +791,89 @@
                             <table className="w-full text-sm">
                                 <thead>
                                     <tr style={{backgroundColor: c === 'blue' ? '#dbeafe' : c === 'green' ? '#dcfce7' : '#f3f4f6'}}>
-                                        <th className="p-3 border">Student</th>
-                                        <th className="p-3 border">Grade</th>
+                                        <th className="p-3 border cursor-pointer hover:bg-blue-200" onClick={() => toggleSort('name')}>
+                                            Student {sortBy === 'name' && (sortOrder === 'asc' ? '▲' : '▼')}
+                                        </th>
+                                        <th className="p-3 border cursor-pointer hover:bg-blue-200" onClick={() => toggleSort('grade')}>
+                                            Grade {sortBy === 'grade' && (sortOrder === 'asc' ? '▲' : '▼')}
+                                        </th>
                                         <th className="p-3 border">Actions</th>
-                                        {subs.map(s => <th key={s} className="p-3 border">{s}</th>)}
+                                        {subs.map(s => (
+                                            <th key={s} className="p-3 border cursor-pointer hover:bg-yellow-100" 
+                                                onClick={() => toggleAllSubject(s)}
+                                                title="Click to toggle all students">
+                                                {s}
+                                            </th>
+                                        ))}
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {list.map(st => (
-                                        <tr key={st.id} className="hover:bg-gray-50">
-                                            <td className="p-3 border font-bold">{st.name}</td>
-                                            <td className="p-3 border text-center">{st.grade}</td>
-                                            <td className="p-3 border text-center">
-                                                <button onClick={()=>setEditSchedule({id:st.id,schedule:schedules[st.id]||{}})} className="text-blue-600 hover:text-blue-800 mx-1" title="Edit Tuition Schedule">✏️</button>
-                                                <button onClick={()=>setEditExam({id:st.id,schedule:exams[st.id]||{}})} className="text-red-600 hover:text-red-800 mx-1" title="Edit Exam Schedule">📚</button>
-                                            </td>
-                                            {subs.map(sub => {
-                                                const has = st.subjects.includes(sub);
-                                                const chk = checked(st.id, sub);
-                                                return has ? (
-                                                    <td key={sub} className={`p-3 border cursor-pointer text-center ${chk?'bg-green-100':'hover:bg-blue-50'}`} onClick={()=>toggle(st.id,sub)}>
-                                                        {chk ? '✅' : '⬜'}
-                                                    </td>
-                                                ) : <td key={sub} className="p-3 border bg-gray-50 text-center">—</td>;
-                                            })}
-                                        </tr>
-                                    ))}
+                                    {list.map(st => {
+                                        const examSubject = getTodayExamSubject(st.id, date);
+                                        const isExamDay = examSubject !== null;
+                                        
+                                        return (
+                                            <tr key={st.id} className={`hover:bg-gray-50 ${isExamDay ? 'bg-red-50' : ''}`}>
+                                                <td className="p-3 border font-bold">
+                                                    {st.name}
+                                                    {isExamDay && <span className="ml-2 text-red-600 text-xs">🎯 EXAM: {examSubject}</span>}
+                                                </td>
+                                                <td className="p-3 border text-center">{st.grade}</td>
+                                                <td className="p-3 border text-center">
+                                                    <button onClick={()=>setEditSchedule({id:st.id,schedule:schedules[st.id]||{}})} className="text-blue-600 hover:text-blue-800 mx-1" title="Edit Tuition Schedule">✏️</button>
+                                                    <button onClick={()=>setEditExam({id:st.id,exams:exams[st.id]||{}})} className="text-red-600 hover:text-red-800 mx-1" title="Edit Exam Dates">📚</button>
+                                                </td>
+                                                {subs.map(sub => {
+                                                    const has = st.subjects.includes(sub);
+                                                    const chk = checked(st.id, sub);
+                                                    const isExamSubToday = sub === examSubject;
+                                                    
+                                                    return has ? (
+                                                        <td 
+                                                            key={sub} 
+                                                            className={`p-3 border cursor-pointer text-center ${
+                                                                chk ? 'bg-green-100' : 
+                                                                isExamSubToday ? 'bg-red-200 border-red-500 border-2' :
+                                                                'hover:bg-blue-50'
+                                                            }`} 
+                                                            onClick={()=>toggle(st.id,sub)}>
+                                                            {chk ? '✅' : isExamSubToday ? '📝' : '⬜'}
+                                                        </td>
+                                                    ) : <td key={sub} className="p-3 border bg-gray-50 text-center">—</td>;
+                                                })}
+                                            </tr>
+                                        );
+                                    })}
                                 </tbody>
                             </table>
                         </div>
 
-                        {(!examMode || both) && (
-                            <div className="bg-blue-50 border-2 border-blue-300 rounded-lg p-6 mb-4">
-                                <h3 className="text-xl font-bold text-blue-900 mb-4">📅 Tuition Weekly Schedule</h3>
-                                {list.filter(s=>schedules[s.id]).length > 0 ? (
-                                    list.filter(s=>schedules[s.id]).map(st => (
-                                        <div key={st.id} className="bg-white rounded-lg shadow p-4 mb-4">
-                                            <h4 className="font-bold mb-3">{st.name}</h4>
-                                            <div className="grid grid-cols-6 gap-2">
-                                                {days.map((d,i) => (
-                                                    <div key={d} className="border rounded p-2 bg-blue-50">
-                                                        <h5 className="font-bold text-xs text-center mb-2">{d}</h5>
-                                                        {(schedules[st.id]?.[i]||[]).map(sub => (
-                                                            <div key={sub} className="bg-yellow-100 border border-yellow-300 rounded px-2 py-1 text-xs font-bold text-center mb-1">{sub}</div>
-                                                        ))}
-                                                        {!(schedules[st.id]?.[i]||[]).length && <div className="text-xs text-gray-400 text-center">Not set</div>}
-                                                    </div>
-                                                ))}
-                                            </div>
+                        <div className="bg-blue-50 border-2 border-blue-300 rounded-lg p-6 mb-4">
+                            <h3 className="text-xl font-bold text-blue-900 mb-4">📅 Tuition Weekly Schedule</h3>
+                            {list.filter(s=>schedules[s.id]).length > 0 ? (
+                                list.filter(s=>schedules[s.id]).map(st => (
+                                    <div key={st.id} className="bg-white rounded-lg shadow p-4 mb-4">
+                                        <h4 className="font-bold mb-3">{st.name}</h4>
+                                        <div className="grid grid-cols-6 gap-2">
+                                            {days.map((d,i) => (
+                                                <div key={d} className="border rounded p-2 bg-blue-50">
+                                                    <h5 className="font-bold text-xs text-center mb-2">{d}</h5>
+                                                    {(schedules[st.id]?.[i]||[]).map(sub => (
+                                                        <div key={sub} className="bg-yellow-100 border border-yellow-300 rounded px-2 py-1 text-xs font-bold text-center mb-1">{sub}</div>
+                                                    ))}
+                                                    {!(schedules[st.id]?.[i]||[]).length && <div className="text-xs text-gray-400 text-center">Not set</div>}
+                                                </div>
+                                            ))}
                                         </div>
-                                    ))
-                                ) : (
-                                    <div className="text-center py-8 text-gray-500">
-                                        <p className="mb-2">No tuition schedules set yet</p>
-                                        <p className="text-sm">Click ✏️ next to student name to create schedule</p>
                                     </div>
-                                )}
-                            </div>
-                        )}
-
-                        {examMode && (
-                            <div className="bg-red-50 border-2 border-red-300 rounded-lg p-6 mb-4">
-                                <h3 className="text-xl font-bold text-red-900 mb-4">📝 Exam Schedule</h3>
-                                {list.filter(s=>exams[s.id]).length > 0 ? (
-                                    list.filter(s=>exams[s.id]).map(st => (
-                                        <div key={st.id} className="bg-white rounded-lg shadow p-4 mb-4">
-                                            <h4 className="font-bold mb-3">{st.name}</h4>
-                                            <div className="grid grid-cols-6 gap-2">
-                                                {days.map((d,i) => (
-                                                    <div key={d} className="border-2 border-red-300 rounded p-2 bg-red-50">
-                                                        <h5 className="font-bold text-xs text-center mb-2 text-red-900">{d}</h5>
-                                                        {exams[st.id]?.[i] ? (
-                                                            <div className="bg-red-200 border-2 border-red-400 rounded px-2 py-2 text-xs font-bold text-center">{exams[st.id][i]}</div>
-                                                        ) : <div className="text-xs text-gray-400 text-center">Not set</div>}
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        </div>
-                                    ))
-                                ) : (
-                                    <div className="text-center py-8 text-gray-500">
-                                        <p className="mb-2">No exam schedules set yet</p>
-                                        <p className="text-sm">Click 📚 next to student name to create exam schedule</p>
-                                    </div>
-                                )}
-                            </div>
-                        )}
+                                ))
+                            ) : (
+                                <div className="text-center py-8 text-gray-500">
+                                    <p className="mb-2">No tuition schedules set yet</p>
+                                    <p className="text-sm">Click ✏️ next to student name to create schedule</p>
+                                </div>
+                            )}
+                        </div>
 
                         <div className="mt-6 bg-gradient-to-r from-blue-50 to-purple-50 rounded-lg p-6 border-2 border-blue-300">
                             <h3 className="font-bold text-lg mb-3 text-blue-900">📖 How to Use:</h3>
@@ -732,36 +882,36 @@
                                     <h4 className="font-bold mb-2 text-blue-800">Daily Tracking:</h4>
                                     <ul className="space-y-1">
                                         <li>✅ Click checkbox to mark subject as taught</li>
-                                        <li>📅 Select date to track different days</li>
-                                        <li>⬜ Empty boxes = not taught yet</li>
-                                        <li>— Gray dash = student doesn't have that subject</li>
+                                        <li>🎯 Click subject heading to toggle all students</li>
+                                        <li>📝 Exam days show 📝 icon for exam subjects</li>
+                                        <li>🎯 Students with exams show "EXAM DAY" indicator</li>
                                     </ul>
                                 </div>
                                 <div>
-                                    <h4 className="font-bold mb-2 text-blue-800">Schedule Management:</h4>
+                                    <h4 className="font-bold mb-2 text-blue-800">Exam Management:</h4>
                                     <ul className="space-y-1">
-                                        <li>✏️ Edit tuition weekly schedule (what to teach)</li>
-                                        <li>📚 Edit exam schedule (1 subject/day)</li>
-                                        <li>🏫 View/edit school timetables</li>
-                                        <li>🎯 Enable "Exam Mode" to show exam plans</li>
+                                        <li>📚 Click book icon to set exam dates</li>
+                                        <li>📅 Exams can span 2-3 weeks</li>
+                                        <li>🔔 System highlights exam days automatically</li>
+                                        <li>✨ After exams, normal timetable shows</li>
                                     </ul>
                                 </div>
                                 <div>
-                                    <h4 className="font-bold mb-2 text-blue-800">Reports & Management:</h4>
+                                    <h4 className="font-bold mb-2 text-blue-800">Timetable Features:</h4>
                                     <ul className="space-y-1">
-                                        <li>📊 View weekly coverage statistics</li>
+                                        <li>🏫 New format: Days in rows, periods in columns</li>
+                                        <li>📊 Up to 8 periods per day supported</li>
+                                        <li>🍽️ Use BREAK/LUNCH for break periods</li>
+                                        <li>✏️ Easy edit and update anytime</li>
+                                    </ul>
+                                </div>
+                                <div>
+                                    <h4 className="font-bold mb-2 text-blue-800">Sorting & Features:</h4>
+                                    <ul className="space-y-1">
+                                        <li>📊 Click headers to sort by name/grade</li>
+                                        <li>🏫 ABACUS students at bottom (Jancy)</li>
                                         {user === 'jancy' && <li>⚙️ Add/edit/remove students</li>}
-                                        <li>📈 Track missing subjects</li>
-                                        <li>🎯 Monitor student progress</li>
-                                    </ul>
-                                </div>
-                                <div>
-                                    <h4 className="font-bold mb-2 text-blue-800">Features:</h4>
-                                    <ul className="space-y-1">
-                                        <li>🏫 School timetables - See what students study at school</li>
-                                        <li>📋 Tuition schedules - Plan your teaching</li>
                                         <li>💾 Auto-save to Firebase</li>
-                                        <li>🌐 Access from any device</li>
                                     </ul>
                                 </div>
                             </div>
