@@ -224,6 +224,35 @@
                 return null;
             };
 
+            const hasUpcomingExams = (studentId, today) => {
+                const examSchedule = exams[studentId];
+                if (!examSchedule) return false;
+                
+                const todayDate = new Date(today);
+                todayDate.setHours(0, 0, 0, 0);
+                
+                for (let subject in examSchedule) {
+                    const examDate = new Date(examSchedule[subject]);
+                    examDate.setHours(0, 0, 0, 0);
+                    if (examDate.getTime() >= todayDate.getTime()) {
+                        return true;
+                    }
+                }
+                return false;
+            };
+
+            const deleteExamSchedule = (studentId) => {
+                if (!confirm('Delete all exam dates for this student?')) return;
+                if(database) database.ref(`examSchedules/${studentId}`).remove();
+                alert('Exam schedule deleted!');
+            };
+
+            const clearAllExams = () => {
+                if (!confirm('Delete ALL exam schedules for ALL students? This cannot be undone!')) return;
+                if(database) database.ref('examSchedules').remove();
+                alert('All exam schedules cleared!');
+            };
+
             const addStudent = () => {
                 if (!newStudent.name || !newStudent.grade || !newStudent.subjects) {
                     return alert('Please fill all required fields!');
@@ -336,7 +365,6 @@
             const subs = [...new Set(list.flatMap(s=>s.subjects))].sort();
             const c = colors[user];
 
-            // SCHOOL TIMETABLE EDITOR - NEW FORMAT
             if(editSchoolTimetable) {
                 const st = list.find(s=>s.id===editSchoolTimetable.id);
                 
@@ -396,7 +424,6 @@
                 );
             }
 
-            // EXAM SCHEDULE EDITOR - DATE BASED
             if(editExam) {
                 const st = list.find(s=>s.id===editExam.id);
                 return (
@@ -415,7 +442,11 @@
                                                 value={editExam.exams?.[sub] || ''}
                                                 onChange={e => {
                                                     const exs = editExam.exams || {};
-                                                    exs[sub] = e.target.value;
+                                                    if (e.target.value) {
+                                                        exs[sub] = e.target.value;
+                                                    } else {
+                                                        delete exs[sub];
+                                                    }
                                                     setEditExam({...editExam, exams: exs});
                                                 }}
                                                 className="w-full mt-2 px-3 py-2 border-2 border-red-300 rounded"
@@ -434,7 +465,6 @@
                 );
             }
 
-            // TIMETABLES VIEW
             if(showTimetables) {
                 return (
                     <div className="min-h-screen bg-gray-50">
@@ -468,10 +498,17 @@
                                                     className="bg-red-600 text-white px-4 py-2 rounded hover:bg-red-700">
                                                     {examSch ? '✏️ Edit' : '➕ Add'} Exams
                                                 </button>
+                                                {examSch && (
+                                                    <button 
+                                                        onClick={() => deleteExamSchedule(st.id)}
+                                                        className="bg-orange-600 text-white px-4 py-2 rounded hover:bg-orange-700"
+                                                        title="Delete exam schedule">
+                                                        🗑️
+                                                    </button>
+                                                )}
                                             </div>
                                         </div>
 
-                                        {/* School Timetable */}
                                         {tt && (
                                             <div className="mb-6">
                                                 <h4 className="font-bold mb-2 text-blue-900">📚 School Timetable</h4>
@@ -517,7 +554,6 @@
                                             </div>
                                         )}
 
-                                        {/* Exam Schedule */}
                                         {examSch && Object.keys(examSch).length > 0 && (
                                             <div>
                                                 <h4 className="font-bold mb-2 text-red-900">📝 Exam Schedule</h4>
@@ -546,8 +582,6 @@
                 );
             }
 
-            // Continue with other views (Management, Report, etc.) in next part...
-            
             if(showManagement && user === 'jancy') {
                 return (
                     <div className="min-h-screen bg-gray-50">
@@ -770,6 +804,11 @@
                                 {user === 'jancy' && (
                                     <button onClick={() => setShowManagement(true)} className="bg-white bg-opacity-20 px-4 py-2 rounded hover:bg-opacity-30">⚙️ Manage</button>
                                 )}
+                                {Object.keys(exams).length > 0 && (
+                                    <button onClick={clearAllExams} className="bg-red-500 bg-opacity-90 px-4 py-2 rounded hover:bg-opacity-100 font-bold" title="Clear all exam schedules">
+                                        🗑️ Clear All Exams
+                                    </button>
+                                )}
                                 <button onClick={()=>{setUser(null);setFaculty(null);}} className="bg-white bg-opacity-20 px-4 py-2 rounded hover:bg-opacity-30">Logout</button>
                             </div>
                         </div>
@@ -778,7 +817,7 @@
                     <div className="bg-white border-b p-4">
                         <div className="max-w-7xl mx-auto flex gap-3 items-center flex-wrap">
                             <input type="date" value={date} onChange={e=>setDate(e.target.value)} className="border rounded px-4 py-2" />
-                            {list.some(st => isExamPeriod(st.id, date)) && (
+                            {list.some(st => isExamPeriod(st.id, date) && hasUpcomingExams(st.id, date)) && (
                                 <div className="ml-auto bg-red-100 border-2 border-red-400 px-4 py-2 rounded font-bold text-red-900">
                                     🎯 EXAM DAY
                                 </div>
@@ -809,7 +848,8 @@
                                 </thead>
                                 <tbody>
                                     {list.map(st => {
-                                        const examSubject = getTodayExamSubject(st.id, date);
+                                        const hasExams = hasUpcomingExams(st.id, date);
+                                        const examSubject = hasExams ? getTodayExamSubject(st.id, date) : null;
                                         const isExamDay = examSubject !== null;
                                         
                                         return (
@@ -822,6 +862,9 @@
                                                 <td className="p-3 border text-center">
                                                     <button onClick={()=>setEditSchedule({id:st.id,schedule:schedules[st.id]||{}})} className="text-blue-600 hover:text-blue-800 mx-1" title="Edit Tuition Schedule">✏️</button>
                                                     <button onClick={()=>setEditExam({id:st.id,exams:exams[st.id]||{}})} className="text-red-600 hover:text-red-800 mx-1" title="Edit Exam Dates">📚</button>
+                                                    {exams[st.id] && (
+                                                        <button onClick={()=>deleteExamSchedule(st.id)} className="text-orange-600 hover:text-orange-800 mx-1" title="Delete Exam Schedule">🗑️</button>
+                                                    )}
                                                 </td>
                                                 {subs.map(sub => {
                                                     const has = st.subjects.includes(sub);
@@ -892,8 +935,8 @@
                                     <ul className="space-y-1">
                                         <li>📚 Click book icon to set exam dates</li>
                                         <li>📅 Exams can span 2-3 weeks</li>
-                                        <li>🔔 System highlights exam days automatically</li>
-                                        <li>✨ After exams, normal timetable shows</li>
+                                        <li>🗑️ Orange bin to delete individual exams</li>
+                                        <li>🗑️ Red button to clear ALL exams at once</li>
                                     </ul>
                                 </div>
                                 <div>
@@ -902,7 +945,7 @@
                                         <li>🏫 New format: Days in rows, periods in columns</li>
                                         <li>📊 Up to 8 periods per day supported</li>
                                         <li>🍽️ Use BREAK/LUNCH for break periods</li>
-                                        <li>✏️ Easy edit and update anytime</li>
+                                        <li>✨ Past exams auto-hide from dashboard</li>
                                     </ul>
                                 </div>
                                 <div>
